@@ -16,8 +16,13 @@ type InputExchange = "NASDAQ" | "NYSE";
 
 const getExchangeSymbols = async (
   exchange: InputExchange,
+  includeDelisted = false,
 ): Promise<Symbol[]> => {
-  const url = `${process.env.EODHD_API_BASE_URL}/exchange-symbol-list/${exchange}?api_token=${process.env.EODHD_API_TOKEN}&delisted=1&type=common_stock`;
+  let url = `${process.env.EODHD_API_BASE_URL}/exchange-symbol-list/${exchange}?api_token=${process.env.EODHD_API_TOKEN}&type=common_stock`;
+
+  if (includeDelisted) {
+    url += "&include_delisted=true";
+  }
 
   const data = await fetchCsv<Symbol[]>(url);
   const symbols = data.map((symbol) => SymbolSchema.parse(symbol));

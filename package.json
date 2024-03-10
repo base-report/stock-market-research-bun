@@ -4,7 +4,9 @@
   "type": "module",
   "devDependencies": {
     "@types/bun": "latest",
+    "@types/luxon": "^3.4.2",
     "@types/papaparse": "^5.3.14",
+    "luxon": "^3.4.4",
     "papaparse": "^5.4.1",
     "prettier": "^3.2.5",
     "zod": "^3.22.4"
