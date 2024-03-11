@@ -29,7 +29,7 @@ const createStockInfoTable = (db: Database) => {
       web_url TEXT,
       logo_url TEXT,
       full_time_employees INTEGER,
-      updated_at TEXT,
+      is_delisted BOOLEAN,
 
       FOREIGN KEY (code) REFERENCES symbols(code)
     );

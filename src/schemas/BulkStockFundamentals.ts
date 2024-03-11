@@ -16,6 +16,7 @@ const GeneralSchema = z
     WebURL: z.union([z.string(), z.null()]),
     LogoURL: z.union([z.string(), z.null()]),
     FullTimeEmployees: z.union([z.number(), z.null()]),
+    IsDelisted: z.union([z.boolean(), z.null()]),
   })
   .transform((x) => ({
     code: x.Code,
@@ -31,6 +32,7 @@ const GeneralSchema = z
     web_url: x.WebURL,
     logo_url: x.LogoURL,
     full_time_employees: x.FullTimeEmployees,
+    is_delisted: x.IsDelisted,
   }));
 
 type General = z.infer<typeof GeneralSchema>;

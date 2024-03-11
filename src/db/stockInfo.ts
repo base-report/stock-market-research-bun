@@ -6,7 +6,7 @@ const addBulkStockInfo = (bulkStockInfo: BulkStockFundamentals) => {
   if (bulkStockInfo.length === 0) return;
 
   const insertRow = db.prepare(
-    "INSERT INTO stock_info (code, ipo_date, sector, industry, gic_sector, gic_group, gic_industry, gic_sub_industry, description, address, web_url, logo_url, full_time_employees) VALUES ($code, $ipo_date, $sector, $industry, $gic_sector, $gic_group, $gic_industry, $gic_sub_industry, $description, $address, $web_url, $logo_url, $full_time_employees) ON CONFLICT(code) DO UPDATE SET ipo_date=excluded.ipo_date, sector=excluded.sector, industry=excluded.industry, gic_sector=excluded.gic_sector, gic_group=excluded.gic_group, gic_industry=excluded.gic_industry, gic_sub_industry=excluded.gic_sub_industry, description=excluded.description, address=excluded.address, web_url=excluded.web_url, logo_url=excluded.logo_url, full_time_employees=excluded.full_time_employees",
+    "INSERT INTO stock_info (code, ipo_date, sector, industry, gic_sector, gic_group, gic_industry, gic_sub_industry, description, address, web_url, logo_url, full_time_employees, is_delisted) VALUES ($code, $ipo_date, $sector, $industry, $gic_sector, $gic_group, $gic_industry, $gic_sub_industry, $description, $address, $web_url, $logo_url, $full_time_employees, $is_delisted) ON CONFLICT(code) DO UPDATE SET ipo_date=excluded.ipo_date, sector=excluded.sector, industry=excluded.industry, gic_sector=excluded.gic_sector, gic_group=excluded.gic_group, gic_industry=excluded.gic_industry, gic_sub_industry=excluded.gic_sub_industry, description=excluded.description, address=excluded.address, web_url=excluded.web_url, logo_url=excluded.logo_url, full_time_employees=excluded.full_time_employees, is_delisted=excluded.is_delisted",
   );
 
   const insertAll = db.transaction((bulkStockInfo: BulkStockFundamentals) => {
@@ -25,6 +25,7 @@ const addBulkStockInfo = (bulkStockInfo: BulkStockFundamentals) => {
         $web_url: stockInfo.web_url,
         $logo_url: stockInfo.logo_url,
         $full_time_employees: stockInfo.full_time_employees,
+        $is_delisted: stockInfo.is_delisted,
       });
     }
     return bulkStockInfo.length;
