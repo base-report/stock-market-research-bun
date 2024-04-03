@@ -20,4 +20,14 @@ const getLeftoverHistoricalPricesCodes = (): string[] => {
   return symbols.map(([code]) => code);
 };
 
-export { addHistoricalPrices, getLeftoverHistoricalPricesCodes };
+const getHistoricalPrices = (code: string): HistoricalPrices | null => {
+  const query = db.query("SELECT * FROM historical_prices WHERE code=$code");
+  const historicalPrices = query.get({ $code: code });
+  return historicalPrices;
+};
+
+export {
+  addHistoricalPrices,
+  getLeftoverHistoricalPricesCodes,
+  getHistoricalPrices,
+};
