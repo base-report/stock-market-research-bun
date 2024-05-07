@@ -178,3 +178,6 @@ dist
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal
+
+# png output
+/charts/*.png

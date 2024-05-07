@@ -4,6 +4,9 @@ import { DateTime } from "luxon";
 import { roundTo } from "../util/number";
 import { getHistoricalPrices } from "./historicalPrices";
 import { findSimilarSegmentsAboveThreshold } from "../util/trendSimilarity";
+import { generateChart } from "../util/chart";
+
+import { default as sharp } from "sharp";
 
 const prtsBreakoutSetupClosingPrices = [
   1.8, 1.55, 1.61, 1.55, 1.72, 1.92, 1.81, 1.7, 1.75, 1.64, 1.68, 1.63, 1.73,
@@ -21,6 +24,11 @@ const findSetups = () => {
   const jsonString = decoder.decode(daily);
   const historicalPrices: HistoricalPrices = JSON.parse(jsonString);
   const closingPrices = historicalPrices.map((c) => c[3]);
+
+  // TODO: generate charts for all similar segments
+  // const chart = generateChart(historicalPrices.slice(7200, 7300));
+  // const chartBuffer = Buffer.from(chart);
+  // sharp(chartBuffer).png().toFile("./charts/chart.png");
 
   const similarSegments = findSimilarSegmentsAboveThreshold(
     prtsBreakoutSetupClosingPrices,
