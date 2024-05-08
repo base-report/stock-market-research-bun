@@ -52,7 +52,33 @@ const findSetups = () => {
   console.log(
     `Similar setups found for ${code} based on the PRTS 2020-07-07 setup`,
   );
-  console.table(similarityTable.sort((a, b) => b.similarity - a.similarity));
+  const sortedSimilarityTable = similarityTable.sort(
+    (a, b) => b.similarity - a.similarity,
+  );
+  console.table(sortedSimilarityTable);
+
+  // generate chart for all similar segments
+  // filename should be code + startDate + endDate
+  for (const { startIndex, endIndex, similarity } of similarSegments) {
+    let extendedEndIndex = endIndex + 20;
+    if (extendedEndIndex > historicalPrices.length) {
+      extendedEndIndex = historicalPrices.length;
+    }
+
+    const chart = generateChart(
+      historicalPrices.slice(startIndex, extendedEndIndex),
+    );
+    const chartBuffer = Buffer.from(chart);
+    const startDate = DateTime.fromMillis(
+      historicalPrices[startIndex][5],
+    ).toFormat("yyyy-MM-dd");
+    const endDate = DateTime.fromMillis(historicalPrices[endIndex][5]).toFormat(
+      "yyyy-MM-dd",
+    );
+    const filename = `${code}-${similarity}-${startDate}-${endDate}.png`;
+    // apply white background and save to file
+    sharp(chartBuffer).png().toFile(`./charts/${filename}`);
+  }
 };
 
 export { findSetups };

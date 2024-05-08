@@ -30,6 +30,39 @@ const calculateMovingAverage = (data, numberOfDays) => {
   return result.filter((d) => d !== null);
 };
 
+const findLongestUptrend = (data) => {
+  const ma10 = calculateMovingAverage(data, 10);
+  let longestUptrend = [];
+  let currentUptrend = [];
+
+  for (let i = 0; i < ma10.length; i++) {
+    if (data[i + 9].close > ma10[i].average) {
+      // Check if closing price is above MA10
+      currentUptrend.push({
+        date: ma10[i].date,
+        open: data[i + 9].open,
+        high: data[i + 9].high,
+        low: data[i + 9].low,
+        close: data[i + 9].close,
+        volume: data[i + 9].volume,
+        ma10: ma10[i].average,
+      });
+    } else {
+      if (currentUptrend.length > longestUptrend.length) {
+        longestUptrend = currentUptrend;
+      }
+      currentUptrend = [];
+    }
+  }
+
+  // Check at the end to capture any uptrend that might be the longest and hasn't been reset
+  if (currentUptrend.length > longestUptrend.length) {
+    longestUptrend = currentUptrend;
+  }
+
+  return longestUptrend;
+};
+
 const formatVolume = (d) => {
   if (d >= 1e9) {
     return (d / 1e9).toFixed(0) + "B"; // Billions
@@ -47,7 +80,7 @@ const generateChart = (
   const { document } = new JSDOM("").window;
 
   const processedData = processData(data);
-  const margin = { top: 20, right: 80, bottom: 30, left: 40 };
+  const margin = { top: 20, right: 50, bottom: 30, left: 40 };
   const width = 1000 - margin.left - margin.right;
   const height = 600 - margin.top - margin.bottom;
 
@@ -60,6 +93,14 @@ const generateChart = (
     .append("g")
     .attr("transform", `translate(${margin.left},${margin.top})`);
 
+  // Add white background first before other elements
+  svg
+    .append("rect")
+    .attr("x", -margin.left) // Extend the rectangle to cover the left margin
+    .attr("y", -margin.top) // Extend the rectangle to cover the top margin
+    .attr("width", width + margin.left + margin.right)
+    .attr("height", height + margin.top + margin.bottom)
+    .attr("fill", "white");
   // Define scales
   const xScale = d3.scaleBand().range([0, width]).padding(0.1);
   const yScale = d3.scaleLinear().range([height - 100, 0]);
@@ -70,12 +111,6 @@ const generateChart = (
     d3.min(processedData, (d) => d.low),
     d3.max(processedData, (d) => d.high),
   ]);
-
-  // Add axes
-  // svg
-  //   .append("g")
-  //   .attr("transform", `translate(0,${height})`)
-  //   .call(d3.axisBottom(xScale).tickFormat(d3.timeFormat("%Y-%m-%d")));
 
   // Calculate tick values for dates
   const tickValues = processedData
@@ -153,6 +188,206 @@ const generateChart = (
   drawLine(movingAverages20, "purple"); // Change color as needed
   drawLine(movingAverages50, "orange"); // Change color as needed
 
+  // plot uptrend
+  const longestUptrend = findLongestUptrend(processedData);
+  const uptrendStart = longestUptrend[0];
+  const uptrendEnd = longestUptrend[longestUptrend.length - 1];
+
+  const lineXStart = xScale(uptrendStart.date) - 10; // Offset to the left
+  const lineXEnd = xScale(uptrendEnd.date) - 10; // Consistent offset to the left
+
+  svg
+    .append("line")
+    .attr("x1", lineXStart)
+    .attr("y1", yScale(uptrendStart.low))
+    .attr("x2", lineXEnd)
+    .attr("y2", yScale(uptrendEnd.high))
+    .attr("stroke", "grey")
+    .attr("stroke-width", 1)
+    .attr("stroke-dasharray", "5,5");
+
+  // plot consolidation
+  const highestHighCandle = longestUptrend.reduce(
+    (acc, curr) => (curr.high > acc.high ? curr : acc),
+    longestUptrend[0],
+  );
+
+  const highestHighIndex = processedData.findIndex(
+    (d) => d.date === highestHighCandle.date,
+  );
+  const consolidationStartIndex = highestHighIndex;
+  const minimumConsolidationLength = 10;
+
+  const fitLine = (data, keyFunc) => {
+    const calculateLine = (p1, p2) => {
+      const slope = (keyFunc(p2) - keyFunc(p1)) / (p2.index - p1.index);
+      const intercept = keyFunc(p1) - slope * p1.index;
+      return { slope, intercept };
+    };
+
+    const countInliers = (line, data, threshold) => {
+      let inlierCount = 0;
+      data.forEach((point, index) => {
+        const expectedY = line.slope * index + line.intercept;
+        if (Math.abs(keyFunc(point) - expectedY) <= threshold) {
+          inlierCount++;
+        }
+      });
+      return inlierCount;
+    };
+
+    const stdDev = Math.sqrt(
+      data.reduce(
+        (acc, d) =>
+          acc +
+          Math.pow(
+            keyFunc(d) - data.reduce((a, b) => a + keyFunc(b), 0) / data.length,
+            2,
+          ),
+        0,
+      ) / data.length,
+    );
+
+    let bestLine = null;
+    let bestInlierCount = 0;
+    const dynamicThreshold = stdDev * 0.5; // Threshold based on half the standard deviation
+
+    for (let i = 0; i < 300; i++) {
+      // Increased iterations to 300 for better sampling
+      let sampleIndices = [
+        Math.floor(Math.random() * data.length),
+        Math.floor(Math.random() * data.length),
+      ];
+      while (sampleIndices[0] === sampleIndices[1]) {
+        // Ensure different indices
+        sampleIndices[1] = Math.floor(Math.random() * data.length);
+      }
+
+      const line = calculateLine(
+        { index: sampleIndices[0], ...data[sampleIndices[0]] },
+        { index: sampleIndices[1], ...data[sampleIndices[1]] },
+      );
+      const inlierCount = countInliers(line, data, dynamicThreshold);
+
+      if (inlierCount > bestInlierCount) {
+        bestLine = line;
+        bestInlierCount = inlierCount;
+      }
+    }
+
+    return bestLine;
+  };
+
+  let dayIndex = consolidationStartIndex + minimumConsolidationLength;
+  let isConsolidationEnded = false;
+
+  let consolidationData = [];
+  let trendlineHighs = {};
+  let trendlineLows = {};
+  let isBreakout = false;
+  while (!isConsolidationEnded && dayIndex < processedData.length) {
+    consolidationData = processedData.slice(consolidationStartIndex, dayIndex);
+    trendlineHighs = fitLine(consolidationData, (d) =>
+      Math.max(d.open, d.close),
+    );
+    trendlineLows = fitLine(consolidationData, (d) =>
+      Math.min(d.open, d.close),
+    );
+
+    // Extrapolate trendlines to next day
+    const nextHighPredicted =
+      trendlineHighs.slope * (dayIndex - consolidationStartIndex + 1) +
+      trendlineHighs.intercept;
+    const nextLowPredicted =
+      trendlineLows.slope * (dayIndex - consolidationStartIndex + 1) +
+      trendlineLows.intercept;
+    const nextDayData = processedData[dayIndex];
+
+    // Check for breakout or breakdown
+    if (
+      nextDayData.close > nextHighPredicted ||
+      nextDayData.close < nextLowPredicted
+    ) {
+      isBreakout = nextDayData.close > nextHighPredicted;
+      isConsolidationEnded = true; // End consolidation if breakout or breakdown occurs
+    } else {
+      dayIndex++; // Otherwise, continue to next day
+    }
+  }
+
+  // Plotting trendlines
+  const plotTrendline = (svg, data, trendline, color, opacity) => {
+    const dataIndexStart =
+      (data[0].date.getTime() - data[0].date.getTime()) / (1000 * 60 * 60 * 24); // This should be 0 if data[0].date is the start
+    const dataIndexEnd =
+      (data[data.length - 1].date.getTime() - data[0].date.getTime()) /
+      (1000 * 60 * 60 * 24);
+
+    const lineXStart = xScale(data[0].date);
+    const lineXEnd = xScale(data[data.length - 1].date);
+
+    const lineYStartDataValue =
+      trendline.slope * dataIndexStart + trendline.intercept;
+    const lineYEndDataValue =
+      trendline.slope * dataIndexEnd + trendline.intercept;
+
+    const lineYStart = yScale(lineYStartDataValue);
+    const lineYEnd = yScale(lineYEndDataValue);
+
+    svg
+      .append("line")
+      .attr("x1", lineXStart)
+      .attr("y1", lineYStart)
+      .attr("x2", lineXEnd)
+      .attr("y2", lineYEnd)
+      .attr("stroke", color)
+      .attr("stroke-width", 2)
+      .attr("opacity", opacity);
+
+    // use processedData to extend the trendline by 5 days
+    const additionalDays = 5;
+    const extendedIndexStart = processedData.findIndex(
+      (d) => d.date === data[data.length - 1].date,
+    );
+    const extendedIndexEnd = extendedIndexStart + additionalDays;
+    const extendedData = processedData.slice(
+      extendedIndexStart,
+      extendedIndexEnd,
+    );
+
+    const lineXEndExtra = xScale(extendedData[extendedData.length - 1].date);
+    const lineYEndExtraDataValue =
+      trendline.slope * (dataIndexEnd + additionalDays) + trendline.intercept;
+    const lineYEndExtra = yScale(lineYEndExtraDataValue);
+
+    svg
+      .append("line")
+      .attr("x1", lineXEnd)
+      .attr("y1", lineYEnd)
+      .attr("x2", lineXEndExtra)
+      .attr("y2", lineYEndExtra)
+      .attr("stroke", color)
+      .attr("stroke-width", 2)
+      .attr("stroke-dasharray", "1.5")
+      .attr("opacity", opacity);
+  };
+
+  // Drawing trendlines
+  plotTrendline(
+    svg,
+    consolidationData,
+    trendlineHighs,
+    "green",
+    isBreakout ? 1 : 0.3,
+  );
+  plotTrendline(
+    svg,
+    consolidationData,
+    trendlineLows,
+    "red",
+    !isBreakout ? 1 : 0.3,
+  );
+
   // Create volume bars
   const volumeScale = d3
     .scaleLinear()
@@ -189,10 +424,10 @@ const generateChart = (
   // Add a dashed line above the volume bars
   svg
     .append("line")
-    .attr("x1", 0)
+    .attr("x1", 0 - margin.left)
     .attr("x2", width)
-    .attr("y1", height - 100)
-    .attr("y2", height - 100)
+    .attr("y1", height)
+    .attr("y2", height + margin.top)
     .attr("stroke", "black")
     .attr("stroke-dasharray", "5,5")
     .attr("opacity", 0.5);
