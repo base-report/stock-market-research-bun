@@ -13,13 +13,41 @@ const processData = (
     volume: d[4],
   }));
 
+const calculateMovingAverage = (data, numberOfDays) => {
+  let result = data.map((entry, index, array) => {
+    if (index < numberOfDays - 1) {
+      return null; // not enough data points to create the average
+    }
+    let sum = 0;
+    for (let i = 0; i < numberOfDays; i++) {
+      sum += array[index - i].close;
+    }
+    return {
+      date: entry.date,
+      average: sum / numberOfDays,
+    };
+  });
+  return result.filter((d) => d !== null);
+};
+
+const formatVolume = (d) => {
+  if (d >= 1e9) {
+    return (d / 1e9).toFixed(0) + "B"; // Billions
+  } else if (d >= 1e6) {
+    return (d / 1e6).toFixed(0) + "M"; // Millions
+  } else if (d >= 1e3) {
+    return (d / 1e3).toFixed(0) + "K"; // Thousands
+  }
+  return d.toFixed(0); // Values less than 1000
+};
+
 const generateChart = (
   data: [number, number, number, number, number, number][],
 ) => {
   const { document } = new JSDOM("").window;
 
   const processedData = processData(data);
-  const margin = { top: 20, right: 30, bottom: 30, left: 40 };
+  const margin = { top: 20, right: 80, bottom: 30, left: 40 };
   const width = 1000 - margin.left - margin.right;
   const height = 600 - margin.top - margin.bottom;
 
@@ -96,7 +124,34 @@ const generateChart = (
     .attr("height", (d) => Math.abs(yScale(d.open) - yScale(d.close)) || 1)
     .attr("width", xScale.bandwidth() * 0.8)
     .attr("fill", (d) => (d.open > d.close ? "red" : "green"))
-    .attr("stroke", "black");
+    .attr("stroke", "black")
+    .attr("stroke-width", 0.5);
+
+  // Plot moving averages
+  const movingAverages10 = calculateMovingAverage(processedData, 10);
+  const movingAverages20 = calculateMovingAverage(processedData, 20);
+  const movingAverages50 = calculateMovingAverage(processedData, 50);
+
+  const drawLine = (data, color) => {
+    const line = d3
+      .line()
+      .x((d) => xScale(d.date) + xScale.bandwidth() / 2)
+      .y((d) => yScale(d.average))
+      .curve(d3.curveMonotoneX); // This makes the line smooth
+
+    svg
+      .append("path")
+      .datum(data)
+      .attr("fill", "none")
+      .attr("stroke", color)
+      .attr("stroke-width", 0.5)
+      .attr("d", line);
+  };
+
+  // Drawing the moving average lines
+  drawLine(movingAverages10, "blue"); // Change color as needed
+  drawLine(movingAverages20, "purple"); // Change color as needed
+  drawLine(movingAverages50, "orange"); // Change color as needed
 
   // Create volume bars
   const volumeScale = d3
@@ -120,7 +175,10 @@ const generateChart = (
     .attr("opacity", 0.5);
 
   // Define a separate volume y-axis using the left side
-  const volumeAxis = d3.axisRight(volumeScale).ticks(3);
+  const volumeAxis = d3
+    .axisRight(volumeScale)
+    .tickFormat(formatVolume)
+    .ticks(3);
 
   // Append volume y-axis to the SVG
   svg
