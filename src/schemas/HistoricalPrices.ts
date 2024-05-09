@@ -61,8 +61,36 @@ const HistoricalPricesSchema = z.object({
     return binaryData;
   }),
 });
-
 type HistoricalPrices = z.infer<typeof HistoricalPricesSchema>;
 
-export type { DailyPrices, HistoricalPrices };
+const NonNullableDailyPricesSchema = z.tuple([
+  z.number(),
+  z.number(),
+  z.number(),
+  z.number(),
+  z.number(),
+  z.number(),
+]);
+
+type NonNullableDailyPrices = z.infer<typeof NonNullableDailyPricesSchema>;
+
+const NonNullableDailyPricesObjectSchema = z.object({
+  date: z.date(),
+  open: z.number(),
+  high: z.number(),
+  low: z.number(),
+  close: z.number(),
+  volume: z.number(),
+});
+
+type NonNullableDailyPricesObject = z.infer<
+  typeof NonNullableDailyPricesObjectSchema
+>;
+
+export type {
+  DailyPrices,
+  HistoricalPrices,
+  NonNullableDailyPrices,
+  NonNullableDailyPricesObject,
+};
 export { DailyPricesSchema, HistoricalPricesSchema };

@@ -4,7 +4,7 @@ import { DateTime } from "luxon";
 import { roundTo } from "../util/number";
 import { getHistoricalPrices } from "./historicalPrices";
 import { findSimilarSegmentsAboveThreshold } from "../util/trendSimilarity";
-import { generateChart } from "../util/chart";
+import { generateChart } from "../chart/svg";
 
 import { default as sharp } from "sharp";
 
