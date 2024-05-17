@@ -83,72 +83,68 @@ const formatVolume = (d: number): string => {
   return d.toFixed(0); // Values less than 1000
 };
 
+const calculateScalingFactor = (
+  data: NonNullableDailyPricesObject[],
+  keyFunc: (d: NonNullableDailyPricesObject) => number,
+): number => {
+  const xRange = data.length;
+  const yRange =
+    Math.max(...data.map(keyFunc)) - Math.min(...data.map(keyFunc));
+  return yRange / xRange;
+};
+
+// use the Theil-Sen estimator to fit a trendline
 const fitLine = (
   data: NonNullableDailyPricesObject[],
   keyFunc: (d: NonNullableDailyPricesObject) => number,
 ): Trendline | null => {
-  const calculateLine = (
-    p1: { index: number } & NonNullableDailyPricesObject,
-    p2: { index: number } & NonNullableDailyPricesObject,
-  ): Trendline => {
-    const slope = (keyFunc(p2) - keyFunc(p1)) / (p2.index - p1.index);
-    const intercept = keyFunc(p1) - slope * p1.index;
-    return { slope, intercept };
-  };
+  if (data.length < 2) {
+    return null;
+  }
 
-  const countInliers = (
-    line: Trendline,
-    data: NonNullableDailyPricesObject[],
-    threshold: number,
-  ): number => {
-    let inlierCount = 0;
-    data.forEach((point, index) => {
-      const expectedY = line.slope * index + line.intercept;
-      if (Math.abs(keyFunc(point) - expectedY) <= threshold) {
-        inlierCount++;
-      }
-    });
-    return inlierCount;
-  };
+  const slopes: number[] = [];
+  const scalingFactor = calculateScalingFactor(data, keyFunc);
 
-  const stdDev = Math.sqrt(
-    data.reduce(
-      (acc, d) =>
-        acc +
-        Math.pow(
-          keyFunc(d) - data.reduce((a, b) => a + keyFunc(b), 0) / data.length,
-          2,
-        ),
-      0,
-    ) / data.length,
-  );
-
-  let bestLine: Trendline | null = null;
-  let bestInlierCount = 0;
-  const dynamicThreshold = stdDev * 0.5; // Threshold based on half the standard deviation
-
-  for (let i = 0; i < 300; i++) {
-    let sampleIndices = [
-      Math.floor(Math.random() * data.length),
-      Math.floor(Math.random() * data.length),
-    ];
-    while (sampleIndices[0] === sampleIndices[1]) {
-      sampleIndices[1] = Math.floor(Math.random() * data.length);
-    }
-
-    const line = calculateLine(
-      { index: sampleIndices[0], ...data[sampleIndices[0]] },
-      { index: sampleIndices[1], ...data[sampleIndices[1]] },
-    );
-    const inlierCount = countInliers(line, data, dynamicThreshold);
-
-    if (inlierCount > bestInlierCount) {
-      bestLine = line;
-      bestInlierCount = inlierCount;
+  for (let i = 0; i < data.length - 1; i++) {
+    for (let j = i + 1; j < data.length; j++) {
+      const slope =
+        (keyFunc(data[j]) - keyFunc(data[i])) / ((j - i) * scalingFactor);
+      slopes.push(slope);
     }
   }
-  return bestLine;
+
+  const medianSlope = (slopes: number[]): number => {
+    const sortedSlopes = slopes.slice().sort((a, b) => a - b);
+    const middle = Math.floor(sortedSlopes.length / 2);
+    if (sortedSlopes.length % 2 === 0) {
+      return (sortedSlopes[middle - 1] + sortedSlopes[middle]) / 2;
+    } else {
+      return sortedSlopes[middle];
+    }
+  };
+
+  const slope = medianSlope(slopes);
+  const intercepts: number[] = data.map(
+    (point, index) => keyFunc(point) - slope * index * scalingFactor,
+  );
+
+  const medianIntercept = (intercepts: number[]): number => {
+    const sortedIntercepts = intercepts.slice().sort((a, b) => a - b);
+    const middle = Math.floor(sortedIntercepts.length / 2);
+    if (sortedIntercepts.length % 2 === 0) {
+      return (sortedIntercepts[middle - 1] + sortedIntercepts[middle]) / 2;
+    } else {
+      return sortedIntercepts[middle];
+    }
+  };
+
+  const intercept = medianIntercept(intercepts);
+
+  return { slope, intercept };
 };
+
+const slopeToAngle = (slope: number): number =>
+  Math.atan(slope) * (180 / Math.PI);
 
 export {
   processData,
@@ -156,4 +152,6 @@ export {
   findLongestUptrend,
   formatVolume,
   fitLine,
+  slopeToAngle,
+  calculateScalingFactor,
 };

@@ -12,6 +12,8 @@ import {
   findLongestUptrend,
   formatVolume,
   fitLine,
+  slopeToAngle,
+  calculateScalingFactor,
 } from "../util/chart";
 
 const drawLine = (
@@ -282,60 +284,62 @@ const generateChart = (data: NonNullableDailyPrices[]) => {
   let isConsolidationEnded = false;
 
   let consolidationData: NonNullableDailyPricesObject[] = [];
+
   let upperTrendline: Trendline = { slope: 0, intercept: 0 };
-  let lowerTrendline: Trendline = { slope: 0, intercept: 0 };
-  let isBreakout = false;
+  let degrees = 0;
+  const maxDegrees = 15;
+
   while (!isConsolidationEnded && dayIndex < processedData.length) {
     consolidationData = processedData.slice(consolidationStartIndex, dayIndex);
-    upperTrendline = fitLine(consolidationData, (d) =>
-      Math.max(d.open, d.close),
-    );
-    lowerTrendline = fitLine(consolidationData, (d) =>
-      Math.min(d.open, d.close),
-    );
+    upperTrendline = fitLine(consolidationData, (d) => d.high);
 
-    // Extrapolate trendlines to next day
-    const nextHighPredicted =
-      upperTrendline.slope * (dayIndex - consolidationStartIndex + 1) +
-      upperTrendline.intercept;
-    const nextLowPredicted =
-      lowerTrendline.slope * (dayIndex - consolidationStartIndex + 1) +
-      lowerTrendline.intercept;
-    const nextDayData = processedData[dayIndex];
+    degrees = slopeToAngle(upperTrendline.slope);
 
-    // Check for breakout or breakdown
-    if (
-      nextDayData.close > nextHighPredicted ||
-      nextDayData.close < nextLowPredicted
-    ) {
-      isBreakout = nextDayData.close > nextHighPredicted;
-      isConsolidationEnded = true; // End consolidation if breakout or breakdown occurs
+    // Only consider trendlines within the valid angle range
+    if (Math.abs(degrees) <= maxDegrees) {
+      // Extrapolate trendlines to next day
+      const nextHighPredicted =
+        upperTrendline.slope * (dayIndex - consolidationStartIndex + 1) +
+        upperTrendline.intercept;
+      const nextDayData = processedData[dayIndex];
+
+      // Check for breakout
+      if (nextDayData.close > nextHighPredicted) {
+        isConsolidationEnded = true; // End consolidation if breakout or breakdown occurs
+      } else {
+        dayIndex++; // Otherwise, continue to next day
+      }
     } else {
-      dayIndex++; // Otherwise, continue to next day
+      // Skip this trendline and move to the next day
+      dayIndex++;
     }
   }
 
-  // Drawing trendlines
-  plotTrendline(
-    svg,
-    xScale,
-    yScale,
+  // Final trendline plotting check
+  const scalingFactor = calculateScalingFactor(
     consolidationData,
-    processedData,
-    upperTrendline,
-    "green",
-    isBreakout ? 1 : 0.3,
+    (d) => d.high,
   );
-  plotTrendline(
-    svg,
-    xScale,
-    yScale,
-    consolidationData,
-    processedData,
-    lowerTrendline,
-    "red",
-    !isBreakout ? 1 : 0.3,
-  );
+
+  if (Math.abs(degrees) <= maxDegrees) {
+    // Drawing trendline
+    const plotSlope = upperTrendline.slope * scalingFactor;
+
+    plotTrendline(
+      svg,
+      xScale,
+      yScale,
+      consolidationData,
+      processedData,
+      { slope: plotSlope, intercept: upperTrendline.intercept },
+      "green",
+      1,
+    );
+  } //  else {
+  //  console.log(
+  //    `Skipped plotting final trendline with ${degrees} degrees and slope ${upperTrendline.slope}`,
+  //  );
+  //}
 
   // Plot volume
   plotVolume(svg, xScale, width, height, margin, processedData);

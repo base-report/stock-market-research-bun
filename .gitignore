@@ -180,4 +180,4 @@ dist
 *.sqlite-wal
 
 # png output
-/charts/*.png
+/charts/**/*.png
