@@ -76,8 +76,8 @@ const calculateDollarVolume = (
 
 const priorMoveMaxDays = 50;
 const priorMoveMinPercentage = 0.3;
-const trendlineMaxSlope = 0.15;
-const trendlineMinDays = 10;
+const trendlineMaxSlope = 0.05;
+const trendlineMinDays = 7;
 const trendlineMaxDays = 40;
 
 const findPriorMove = (
@@ -206,7 +206,7 @@ const findHighestPriceAndExit = (
 };
 
 const findSetups = () => {
-  const { code, daily } = getHistoricalPrices("MARA");
+  const { code, daily } = getHistoricalPrices("CVNA");
   const decoder = new TextDecoder();
   const jsonString = decoder.decode(daily);
   const historicalPrices: HistoricalPrices = JSON.parse(jsonString);
@@ -260,9 +260,16 @@ const findSetups = () => {
             },
           };
 
-          const existingSetup = setups.find(
-            (s) => s.trade?.entry.index === trade?.entry.index,
-          );
+          // look for a setup with overlapping consolidation dates
+          const existingSetup = setups.find((setup) => {
+            if (
+              setup.consolidation &&
+              setup.consolidation.startIndex <= consolidation.endIndex &&
+              setup.consolidation.endIndex >= consolidation.startIndex
+            ) {
+              return true;
+            }
+          });
 
           if (trade && !existingSetup) {
             trade.entry.trendlineBreakPrice = trendlineBreakPrice;
@@ -282,22 +289,6 @@ const findSetups = () => {
               trade,
             };
             setups.push(setup);
-            console.log(setup);
-            console.log(
-              `prior move low index: ${processedData[setup.priorMove.lowIndex].date}`,
-            );
-            console.log(
-              `prior move high index: ${processedData[setup.priorMove.highIndex].date}`,
-            );
-            console.log(
-              `consolidation start date: ${processedData[setup.consolidation.startIndex].date}`,
-            );
-            console.log(
-              `consolidation end date: ${processedData[setup.consolidation.endIndex].date}`,
-            );
-            console.log(
-              `entry date: ${processedData[setup.trade.entry.index].date}`,
-            );
 
             let chartStartIndex = setup.priorMove.lowIndex - 20;
             if (chartStartIndex < 0) {
@@ -337,6 +328,7 @@ const findSetups = () => {
             ).toFormat("yyyy-MM-dd");
             const filename = `${code}-${entryDate}-${exitDate}.png`;
             sharp(chartBuffer).png().toFile(`./charts/${filename}`);
+            console.log("Chart saved to", filename);
           }
         }
       }
@@ -344,20 +336,5 @@ const findSetups = () => {
   }
   console.log(setups.length);
 };
-
-//   const chart = generateChart(
-//     historicalPrices.slice(startIndex, extendedEndIndex),
-//   );
-//   const chartBuffer = Buffer.from(chart);
-//   const startDate = DateTime.fromMillis(
-//     historicalPrices[startIndex][5],
-//   ).toFormat("yyyy-MM-dd");
-//   const endDate = DateTime.fromMillis(historicalPrices[endIndex][5]).toFormat(
-//     "yyyy-MM-dd",
-//   );
-//   const filename = `${code}-${similarity}-${startDate}-${endDate}.png`;
-//   // apply white background and save to file
-//   sharp(chartBuffer).png().toFile(`./charts/${filename}`);
-// }
 
 export { findSetups };

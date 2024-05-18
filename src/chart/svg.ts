@@ -53,22 +53,6 @@ const plotTrendline = (
     .attr("y2", yEnd)
     .attr("stroke", color)
     .attr("stroke-width", strokeWidth);
-
-  // extend the trendline to the right using a dashed line
-  // for 3 days
-  const extensionDays = 3;
-  const extensionX = xEnd + extensionDays * xScale.bandwidth();
-  const extensionY = yScale(yEndPrice + extensionDays * trendline.slope);
-
-  svg
-    .append("line")
-    .attr("x1", xEnd)
-    .attr("y1", yEnd)
-    .attr("x2", extensionX)
-    .attr("y2", extensionY)
-    .attr("stroke", color)
-    .attr("stroke-width", strokeWidth)
-    .attr("stroke-dasharray", "5,5");
 };
 
 const plotVolume = (
@@ -277,7 +261,7 @@ const generateChart = (
     .attr("stroke-dasharray", "5,5");
 
   // plot consolidation
-  let consolidationData = processedData.slice(
+  const consolidationData = processedData.slice(
     consolidationStartIndex,
     consolidationEndIndex + 1,
   );
