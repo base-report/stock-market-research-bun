@@ -1,84 +1,363 @@
 import type { HistoricalPrices } from "../schemas/HistoricalPrices";
+import type { Trendline } from "../schemas/Trendline";
+import type { NonNullableDailyPricesObject } from "../schemas/HistoricalPrices";
 
 import { DateTime } from "luxon";
-import { roundTo } from "../util/number";
 import { getHistoricalPrices } from "./historicalPrices";
-import { findSimilarSegmentsAboveThreshold } from "../util/trendSimilarity";
 import { generateChart } from "../chart/svg";
+import { processData, fitLine } from "../util/chart";
+import sharp from "sharp";
 
-import { default as sharp } from "sharp";
+interface Trade {
+  entry: {
+    price: number;
+    index: number;
+    trendlineBreakPrice: number;
+    adr: number;
+    dollarVolume: number;
+  };
+  exit?: {
+    price: number;
+    index: number;
+    reason: string;
+    days?: number;
+  };
+  highestPrice?: {
+    index: number;
+    price: number;
+    days: number;
+  };
+}
 
-const prtsBreakoutSetupClosingPrices = [
-  1.8, 1.55, 1.61, 1.55, 1.72, 1.92, 1.81, 1.7, 1.75, 1.64, 1.68, 1.63, 1.73,
-  1.77, 1.79, 1.83, 1.84, 1.83, 1.88, 2.19, 2.2, 2.11, 2.25, 2.43, 2.65, 2.66,
-  3.06, 3.43, 3.4, 3.21, 3.32, 3.55, 3.68, 3.75, 4.25, 4.67, 4.95, 4.96, 4.49,
-  5.07, 5.08, 5.03, 5.24, 5.66, 6.08, 5.88, 6, 5.97, 6.46, 6.97, 7.89, 8.43,
-  7.76, 8.3, 7.7, 8.85, 8.57, 8.12, 8.1, 8.34, 8.73, 8.95, 8.84, 8.78, 8.71,
-  8.8, 8.89, 8.84, 8.62, 8.64, 8.82, 8.66, 8.74, 8.74, 8.76, 8.74,
-];
+interface Setup {
+  priorMove: {
+    lowIndex: number;
+    highIndex: number;
+    percentage: number;
+  };
+  consolidation?: {
+    slope: number;
+    days: number;
+    startIndex: number;
+    endIndex: number;
+  };
+  trade?: Trade;
+}
+
+const calculateSMA = (
+  data: NonNullableDailyPricesObject[],
+  index: number,
+  period: number,
+): number => {
+  if (index < period) return Infinity; // handle edge case
+  let sum = 0;
+  for (let k = index - period + 1; k <= index; k++) {
+    sum += data[k].close;
+  }
+  return sum / period;
+};
+
+const calculateADR = (
+  data: NonNullableDailyPricesObject[],
+  endIndex: number,
+) => {
+  const last20Days = data.slice(endIndex - 20, endIndex);
+  const sum = last20Days.reduce((acc, d) => acc + d.high / d.low, 0);
+  return sum / last20Days.length - 1;
+};
+
+const calculateDollarVolume = (
+  data: NonNullableDailyPricesObject[],
+  endIndex: number,
+) => {
+  const last20Days = data.slice(endIndex - 20, endIndex);
+  return last20Days.reduce((acc, d) => acc + d.close * d.volume, 0) / 20;
+};
+
+const priorMoveMaxDays = 50;
+const priorMoveMinPercentage = 0.3;
+const trendlineMaxSlope = 0.15;
+const trendlineMinDays = 10;
+const trendlineMaxDays = 40;
+
+const findPriorMove = (
+  data: NonNullableDailyPricesObject[],
+  index: number,
+): Setup["priorMove"] | undefined => {
+  let highIndex = 0;
+  let lowIndex = 0;
+
+  let startIndex = index - priorMoveMaxDays;
+  if (startIndex < 0) {
+    startIndex = 0;
+  }
+
+  for (let i = startIndex; i < index; i++) {
+    if (data[i].high > data[highIndex].high) {
+      highIndex = i;
+    }
+    if (data[i].low < data[lowIndex].low) {
+      lowIndex = i;
+    }
+  }
+
+  let newHighInNext3Days = true;
+
+  while (newHighInNext3Days) {
+    newHighInNext3Days = false;
+    for (let i = highIndex + 1; i < highIndex + 4; i++) {
+      if (data[i]?.high > data[highIndex]?.high) {
+        highIndex = i;
+        newHighInNext3Days = true;
+      }
+    }
+  }
+
+  const percentage =
+    (data[highIndex].high - data[lowIndex].low) / data[lowIndex].low;
+
+  const withinMaxDays = highIndex - lowIndex <= priorMoveMaxDays;
+  if (
+    percentage >= priorMoveMinPercentage &&
+    highIndex > lowIndex &&
+    withinMaxDays
+  ) {
+    return {
+      highIndex,
+      lowIndex,
+      percentage,
+    };
+  }
+};
+
+const findTrendlineWithBreakoutIndex = (
+  data: NonNullableDailyPricesObject[],
+  index: number,
+):
+  | { trendline: Trendline; index: number; trendlineBreakPrice: number }
+  | undefined => {
+  let trendline: Trendline | undefined;
+
+  for (let offset = trendlineMinDays; offset <= trendlineMaxDays; offset++) {
+    const endIndex = index + offset;
+    if (endIndex >= data.length) break;
+
+    const trendlineData = data.slice(index, endIndex);
+    const { slope, intercept } = fitLine(trendlineData, (d) => d.high);
+    const breakoutPrice = slope * data[index].high + intercept;
+    const isBreakout = data[endIndex + 1]?.close > breakoutPrice;
+
+    const withinMaxSlope = Math.abs(slope) <= trendlineMaxSlope;
+
+    if (withinMaxSlope && isBreakout) {
+      trendline = { slope, intercept };
+      return { trendline, index: endIndex, trendlineBreakPrice: breakoutPrice };
+    }
+  }
+
+  return undefined;
+};
+
+const findHighestPriceAndExit = (
+  data: NonNullableDailyPricesObject[],
+  trade: Trade,
+  index: number,
+): { exit: Trade["exit"]; highestPrice: Trade["highestPrice"] } | undefined => {
+  let highestPrice = {
+    index: trade.entry.index,
+    price: trade.entry.price,
+    days: 1,
+  };
+
+  let exit: Trade["exit"] | undefined;
+
+  const entryLOD = data[trade.entry.index].low;
+
+  for (let i = index; i < data.length; i++) {
+    if (data[i].high > highestPrice.price) {
+      highestPrice = {
+        index: i,
+        price: data[i].high,
+        days: i - trade.entry.index,
+      };
+    }
+    if (data[i].close < entryLOD) {
+      exit = {
+        price: data[i].close,
+        index: i,
+        days: i - trade.entry.index,
+        reason: "low of the day",
+      };
+      break;
+    }
+    const sma10 = calculateSMA(data, i, 10);
+    if (data[i].close < sma10) {
+      exit = {
+        price: data[i].close,
+        index: i,
+        days: i - trade.entry.index,
+        reason: "SMA10",
+      };
+      break;
+    }
+  }
+
+  return { exit, highestPrice };
+};
 
 const findSetups = () => {
-  const { code, daily } = getHistoricalPrices("AAPL");
-  // decode daily which is Uint8Array
+  const { code, daily } = getHistoricalPrices("MARA");
   const decoder = new TextDecoder();
   const jsonString = decoder.decode(daily);
   const historicalPrices: HistoricalPrices = JSON.parse(jsonString);
-  const closingPrices = historicalPrices.map((c) => c[3]);
+  const processedData: NonNullableDailyPricesObject[] =
+    processData(historicalPrices);
 
-  // TODO: generate charts for all similar segments
-  // const chart = generateChart(historicalPrices.slice(7200, 7300));
-  // const chartBuffer = Buffer.from(chart);
-  // sharp(chartBuffer).png().toFile("./charts/chart.png");
+  const setups: Setup[] = [];
 
-  const similarSegments = findSimilarSegmentsAboveThreshold(
-    prtsBreakoutSetupClosingPrices,
-    closingPrices,
-  );
-  const similarityTable = [];
-  for (const { startIndex, endIndex, similarity } of similarSegments) {
-    const startDate = DateTime.fromMillis(
-      historicalPrices[startIndex][5],
-    ).toFormat("yyyy-MM-dd");
-    const endDate = DateTime.fromMillis(historicalPrices[endIndex][5]).toFormat(
-      "yyyy-MM-dd",
-    );
-    similarityTable.push({
-      startDate,
-      endDate,
-      similarity: `${roundTo(similarity, 2)}%`,
-    });
-  }
+  for (let i = 0; i < processedData.length; i++) {
+    const priorMove = findPriorMove(processedData, i);
 
-  console.log(
-    `Similar setups found for ${code} based on the PRTS 2020-07-07 setup`,
-  );
-  const sortedSimilarityTable = similarityTable.sort(
-    (a, b) => b.similarity - a.similarity,
-  );
-  console.table(sortedSimilarityTable);
+    if (priorMove) {
+      const res = findTrendlineWithBreakoutIndex(
+        processedData,
+        priorMove.highIndex,
+      );
+      if (res) {
+        const { trendline, index, trendlineBreakPrice } = res;
 
-  // generate chart for all similar segments
-  // filename should be code + startDate + endDate
-  for (const { startIndex, endIndex, similarity } of similarSegments) {
-    let extendedEndIndex = endIndex + 20;
-    if (extendedEndIndex > historicalPrices.length) {
-      extendedEndIndex = historicalPrices.length;
+        const adr = calculateADR(processedData, index);
+
+        // if close is more than 1 x ADR above the high of the prior move, skip
+        // we don't want to enter trades that are too extended
+        if (
+          processedData[index].close >
+          processedData[priorMove.highIndex].high * (1 + adr)
+        ) {
+          continue;
+        }
+
+        const consolidation = {
+          slope: trendline.slope,
+          days: index - priorMove.highIndex,
+          startIndex: priorMove.highIndex,
+          endIndex: index - 1,
+        };
+
+        if (consolidation) {
+          const price = processedData[index].close;
+          if (price <= trendlineBreakPrice) {
+            continue;
+          }
+
+          const trade = {
+            entry: {
+              price,
+              index,
+              trendlineBreakPrice,
+              adr,
+              dollarVolume: calculateDollarVolume(processedData, index),
+            },
+          };
+
+          const existingSetup = setups.find(
+            (s) => s.trade?.entry.index === trade?.entry.index,
+          );
+
+          if (trade && !existingSetup) {
+            trade.entry.trendlineBreakPrice = trendlineBreakPrice;
+
+            const { exit, highestPrice } = findHighestPriceAndExit(
+              processedData,
+              trade,
+              index + 1,
+            );
+
+            trade.exit = exit;
+            trade.highestPrice = highestPrice;
+
+            const setup: Setup = {
+              priorMove,
+              consolidation,
+              trade,
+            };
+            setups.push(setup);
+            console.log(setup);
+            console.log(
+              `prior move low index: ${processedData[setup.priorMove.lowIndex].date}`,
+            );
+            console.log(
+              `prior move high index: ${processedData[setup.priorMove.highIndex].date}`,
+            );
+            console.log(
+              `consolidation start date: ${processedData[setup.consolidation.startIndex].date}`,
+            );
+            console.log(
+              `consolidation end date: ${processedData[setup.consolidation.endIndex].date}`,
+            );
+            console.log(
+              `entry date: ${processedData[setup.trade.entry.index].date}`,
+            );
+
+            let chartStartIndex = setup.priorMove.lowIndex - 20;
+            if (chartStartIndex < 0) {
+              chartStartIndex = 0;
+            }
+            let chartEndIndex = setup.trade.exit?.index + 20;
+            if (chartEndIndex >= processedData.length) {
+              chartEndIndex = processedData.length - 1;
+            }
+            const priorMoveStartIndex =
+              setup.priorMove.lowIndex - chartStartIndex;
+            const priorMoveEndIndex =
+              setup.priorMove.highIndex - chartStartIndex;
+            const consolidationStartIndex =
+              setup.consolidation.startIndex - chartStartIndex;
+            const consolidationEndIndex =
+              setup.consolidation.endIndex - chartStartIndex;
+            const entryIndex = setup.trade.entry.index - chartStartIndex;
+            const exitIndex = setup.trade.exit?.index - chartStartIndex;
+
+            const chart = generateChart(
+              processedData.slice(chartStartIndex, chartEndIndex),
+              priorMoveStartIndex,
+              priorMoveEndIndex,
+              consolidationStartIndex,
+              consolidationEndIndex,
+              entryIndex,
+              exitIndex,
+              trendline,
+            );
+            const chartBuffer = Buffer.from(chart);
+            const entryDate = DateTime.fromJSDate(
+              processedData[setup.trade.entry.index].date,
+            ).toFormat("yyyy-MM-dd");
+            const exitDate = DateTime.fromJSDate(
+              processedData[setup.trade.exit?.index].date,
+            ).toFormat("yyyy-MM-dd");
+            const filename = `${code}-${entryDate}-${exitDate}.png`;
+            sharp(chartBuffer).png().toFile(`./charts/${filename}`);
+          }
+        }
+      }
     }
-
-    const chart = generateChart(
-      historicalPrices.slice(startIndex, extendedEndIndex),
-    );
-    const chartBuffer = Buffer.from(chart);
-    const startDate = DateTime.fromMillis(
-      historicalPrices[startIndex][5],
-    ).toFormat("yyyy-MM-dd");
-    const endDate = DateTime.fromMillis(historicalPrices[endIndex][5]).toFormat(
-      "yyyy-MM-dd",
-    );
-    const filename = `${code}-${similarity}-${startDate}-${endDate}.png`;
-    // apply white background and save to file
-    sharp(chartBuffer).png().toFile(`./charts/${filename}`);
   }
+  console.log(setups.length);
 };
+
+//   const chart = generateChart(
+//     historicalPrices.slice(startIndex, extendedEndIndex),
+//   );
+//   const chartBuffer = Buffer.from(chart);
+//   const startDate = DateTime.fromMillis(
+//     historicalPrices[startIndex][5],
+//   ).toFormat("yyyy-MM-dd");
+//   const endDate = DateTime.fromMillis(historicalPrices[endIndex][5]).toFormat(
+//     "yyyy-MM-dd",
+//   );
+//   const filename = `${code}-${similarity}-${startDate}-${endDate}.png`;
+//   // apply white background and save to file
+//   sharp(chartBuffer).png().toFile(`./charts/${filename}`);
+// }
 
 export { findSetups };

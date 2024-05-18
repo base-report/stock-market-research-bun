@@ -85,11 +85,10 @@ const formatVolume = (d: number): string => {
 
 const calculateScalingFactor = (
   data: NonNullableDailyPricesObject[],
-  keyFunc: (d: NonNullableDailyPricesObject) => number,
 ): number => {
   const xRange = data.length;
   const yRange =
-    Math.max(...data.map(keyFunc)) - Math.min(...data.map(keyFunc));
+    Math.max(...data.map((d) => d.high)) - Math.min(...data.map((d) => d.low));
   return yRange / xRange;
 };
 
@@ -103,12 +102,10 @@ const fitLine = (
   }
 
   const slopes: number[] = [];
-  const scalingFactor = calculateScalingFactor(data, keyFunc);
 
   for (let i = 0; i < data.length - 1; i++) {
     for (let j = i + 1; j < data.length; j++) {
-      const slope =
-        (keyFunc(data[j]) - keyFunc(data[i])) / ((j - i) * scalingFactor);
+      const slope = (keyFunc(data[j]) - keyFunc(data[i])) / (j - i);
       slopes.push(slope);
     }
   }
@@ -125,7 +122,7 @@ const fitLine = (
 
   const slope = medianSlope(slopes);
   const intercepts: number[] = data.map(
-    (point, index) => keyFunc(point) - slope * index * scalingFactor,
+    (point, index) => keyFunc(point) - slope * index,
   );
 
   const medianIntercept = (intercepts: number[]): number => {

@@ -1,20 +1,9 @@
-import type {
-  NonNullableDailyPrices,
-  NonNullableDailyPricesObject,
-} from "../schemas/HistoricalPrices";
+import type { NonNullableDailyPricesObject } from "../schemas/HistoricalPrices";
 import type { Trendline } from "../schemas/Trendline";
 
 import * as d3 from "d3";
 import { JSDOM } from "jsdom";
-import {
-  processData,
-  calculateMovingAverage,
-  findLongestUptrend,
-  formatVolume,
-  fitLine,
-  slopeToAngle,
-  calculateScalingFactor,
-} from "../util/chart";
+import { calculateMovingAverage, formatVolume } from "../util/chart";
 
 const drawLine = (
   svg: d3.Selection<SVGElement, unknown, null, undefined>,
@@ -43,62 +32,43 @@ const plotTrendline = (
   xScale: d3.ScaleBand<string>,
   yScale: d3.ScaleLinear<number, number>,
   data: NonNullableDailyPricesObject[],
-  allData: NonNullableDailyPricesObject[],
   trendline: Trendline,
-  color: string,
-  opacity: number,
+  color: string | d3.ValueFn<SVGPathElement, unknown, string> | undefined,
+  strokeWidth: number,
 ) => {
-  const dataIndexStart =
-    (data[0].date.getTime() - data[0].date.getTime()) / (1000 * 60 * 60 * 24); // This should be 0 if data[0].date is the start
-  const dataIndexEnd =
-    (data[data.length - 1].date.getTime() - data[0].date.getTime()) /
-    (1000 * 60 * 60 * 24);
+  const xStart = xScale(data[0].date);
+  const xEnd = xScale(data[data.length - 1].date) + xScale.bandwidth();
 
-  const lineXStart = xScale(data[0].date);
-  const lineXEnd = xScale(data[data.length - 1].date);
+  const yStartPrice = trendline.slope + trendline.intercept;
+  const yEndPrice = (data.length - 1) * trendline.slope + trendline.intercept;
 
-  const lineYStartDataValue =
-    trendline.slope * dataIndexStart + trendline.intercept;
-  const lineYEndDataValue =
-    trendline.slope * dataIndexEnd + trendline.intercept;
-
-  const lineYStart = yScale(lineYStartDataValue);
-  const lineYEnd = yScale(lineYEndDataValue);
+  const yStart = yScale(yStartPrice);
+  const yEnd = yScale(yEndPrice);
 
   svg
     .append("line")
-    .attr("x1", lineXStart)
-    .attr("y1", lineYStart)
-    .attr("x2", lineXEnd)
-    .attr("y2", lineYEnd)
+    .attr("x1", xStart)
+    .attr("y1", yStart)
+    .attr("x2", xEnd)
+    .attr("y2", yEnd)
     .attr("stroke", color)
-    .attr("stroke-width", 2)
-    .attr("opacity", opacity);
+    .attr("stroke-width", strokeWidth);
 
-  // use allData to extend the trendline by 5 days
-  const additionalDays = 5;
-  const extendedIndexStart = allData.findIndex(
-    (d) => d.date === data[data.length - 1].date,
-  );
-
-  const extendedIndexEnd = extendedIndexStart + additionalDays;
-  const extendedData = allData.slice(extendedIndexStart, extendedIndexEnd);
-
-  const lineXEndExtra = xScale(extendedData[extendedData.length - 1].date);
-  const lineYEndExtraDataValue =
-    trendline.slope * (dataIndexEnd + additionalDays) + trendline.intercept;
-  const lineYEndExtra = yScale(lineYEndExtraDataValue);
+  // extend the trendline to the right using a dashed line
+  // for 3 days
+  const extensionDays = 3;
+  const extensionX = xEnd + extensionDays * xScale.bandwidth();
+  const extensionY = yScale(yEndPrice + extensionDays * trendline.slope);
 
   svg
     .append("line")
-    .attr("x1", lineXEnd)
-    .attr("y1", lineYEnd)
-    .attr("x2", lineXEndExtra)
-    .attr("y2", lineYEndExtra)
+    .attr("x1", xEnd)
+    .attr("y1", yEnd)
+    .attr("x2", extensionX)
+    .attr("y2", extensionY)
     .attr("stroke", color)
-    .attr("stroke-width", 2)
-    .attr("stroke-dasharray", "1.5")
-    .attr("opacity", opacity);
+    .attr("stroke-width", strokeWidth)
+    .attr("stroke-dasharray", "5,5");
 };
 
 const plotVolume = (
@@ -147,17 +117,56 @@ const plotVolume = (
     .append("line")
     .attr("x1", 0 - margin.left)
     .attr("x2", width)
-    .attr("y1", height)
-    .attr("y2", height + margin.top)
+    .attr("y1", height - 100)
+    .attr("y2", height - 100)
     .attr("stroke", "black")
     .attr("stroke-dasharray", "5,5")
     .attr("opacity", 0.5);
 };
 
-const generateChart = (data: NonNullableDailyPrices[]) => {
+const plotEntryExit = (
+  svg: d3.Selection<SVGElement, unknown, null, undefined>,
+  xScale: d3.ScaleBand<string>,
+  yScale: d3.ScaleLinear<number, number>,
+  entryIndex: number,
+  exitIndex: number,
+  processedData: NonNullableDailyPricesObject[],
+) => {
+  const entry = processedData[entryIndex];
+  const exit = processedData[exitIndex];
+
+  const entryX = xScale(entry.date) + xScale.bandwidth() / 2;
+  const entryY = yScale(entry.low * 0.98);
+
+  const exitX = xScale(exit.date) + xScale.bandwidth() / 2;
+  const exitY = yScale(exit.low * 0.98);
+
+  const triangleSymbol = d3.symbol().type(d3.symbolTriangle).size(42);
+  svg
+    .append("path")
+    .attr("d", triangleSymbol)
+    .attr("transform", `translate(${entryX}, ${entryY}) rotate(0)`) // Adjust rotation if needed
+    .attr("fill", "green");
+
+  svg
+    .append("path")
+    .attr("d", triangleSymbol)
+    .attr("transform", `translate(${exitX}, ${exitY}) rotate(0)`) // Adjust rotation if needed
+    .attr("fill", "red");
+};
+
+const generateChart = (
+  processedData: NonNullableDailyPricesObject[],
+  priorMoveStartIndex: number,
+  priorMoveEndIndex: number,
+  consolidationStartIndex: number,
+  consolidationEndIndex: number,
+  entryIndex: number,
+  exitIndex: number,
+  trendline: Trendline,
+) => {
   const { document } = new JSDOM("").window;
 
-  const processedData = processData(data);
   const margin = { top: 20, right: 50, bottom: 30, left: 40 };
   const width = 1000 - margin.left - margin.right;
   const height = 600 - margin.top - margin.bottom;
@@ -251,9 +260,8 @@ const generateChart = (data: NonNullableDailyPrices[]) => {
   drawLine(svg, xScale, yScale, movingAverages50, "orange");
 
   // plot uptrend
-  const longestUptrend = findLongestUptrend(processedData);
-  const uptrendStart = longestUptrend[0];
-  const uptrendEnd = longestUptrend[longestUptrend.length - 1];
+  const uptrendStart = processedData[priorMoveStartIndex];
+  const uptrendEnd = processedData[priorMoveEndIndex];
 
   const lineXStart = xScale(uptrendStart.date) - 10; // Offset to the left
   const lineXEnd = xScale(uptrendEnd.date) - 10; // Consistent offset to the left
@@ -269,77 +277,23 @@ const generateChart = (data: NonNullableDailyPrices[]) => {
     .attr("stroke-dasharray", "5,5");
 
   // plot consolidation
-  const highestHighCandle = longestUptrend.reduce(
-    (acc, curr) => (curr.high > acc.high ? curr : acc),
-    longestUptrend[0],
+  let consolidationData = processedData.slice(
+    consolidationStartIndex,
+    consolidationEndIndex + 1,
   );
 
-  const highestHighIndex = processedData.findIndex(
-    (d) => d.date === highestHighCandle.date,
-  );
-  const consolidationStartIndex = highestHighIndex;
-  const minimumConsolidationLength = 10;
-
-  let dayIndex = consolidationStartIndex + minimumConsolidationLength;
-  let isConsolidationEnded = false;
-
-  let consolidationData: NonNullableDailyPricesObject[] = [];
-
-  let upperTrendline: Trendline = { slope: 0, intercept: 0 };
-  let degrees = 0;
-  const maxDegrees = 15;
-
-  while (!isConsolidationEnded && dayIndex < processedData.length) {
-    consolidationData = processedData.slice(consolidationStartIndex, dayIndex);
-    upperTrendline = fitLine(consolidationData, (d) => d.high);
-
-    degrees = slopeToAngle(upperTrendline.slope);
-
-    // Only consider trendlines within the valid angle range
-    if (Math.abs(degrees) <= maxDegrees) {
-      // Extrapolate trendlines to next day
-      const nextHighPredicted =
-        upperTrendline.slope * (dayIndex - consolidationStartIndex + 1) +
-        upperTrendline.intercept;
-      const nextDayData = processedData[dayIndex];
-
-      // Check for breakout
-      if (nextDayData.close > nextHighPredicted) {
-        isConsolidationEnded = true; // End consolidation if breakout or breakdown occurs
-      } else {
-        dayIndex++; // Otherwise, continue to next day
-      }
-    } else {
-      // Skip this trendline and move to the next day
-      dayIndex++;
-    }
-  }
-
-  // Final trendline plotting check
-  const scalingFactor = calculateScalingFactor(
+  plotTrendline(
+    svg,
+    xScale,
+    yScale,
     consolidationData,
-    (d) => d.high,
+    trendline,
+    "black",
+    1.5,
   );
 
-  if (Math.abs(degrees) <= maxDegrees) {
-    // Drawing trendline
-    const plotSlope = upperTrendline.slope * scalingFactor;
-
-    plotTrendline(
-      svg,
-      xScale,
-      yScale,
-      consolidationData,
-      processedData,
-      { slope: plotSlope, intercept: upperTrendline.intercept },
-      "green",
-      1,
-    );
-  } //  else {
-  //  console.log(
-  //    `Skipped plotting final trendline with ${degrees} degrees and slope ${upperTrendline.slope}`,
-  //  );
-  //}
+  // Plot entry and exit points
+  plotEntryExit(svg, xScale, yScale, entryIndex, exitIndex, processedData);
 
   // Plot volume
   plotVolume(svg, xScale, width, height, margin, processedData);
