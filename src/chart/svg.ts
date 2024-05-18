@@ -171,7 +171,7 @@ const generateChart = (
     .attr("y", -margin.top) // Extend the rectangle to cover the top margin
     .attr("width", width + margin.left + margin.right)
     .attr("height", height + margin.top + margin.bottom)
-    .attr("fill", "white");
+    .attr("fill", "cornsilk");
   // Define scales
   const xScale = d3.scaleBand().range([0, width]).padding(0.1);
   const yScale = d3.scaleLinear().range([height - 100, 0]);
@@ -241,7 +241,7 @@ const generateChart = (
   // Drawing the moving average lines
   drawLine(svg, xScale, yScale, movingAverages10, "blue");
   drawLine(svg, xScale, yScale, movingAverages20, "purple");
-  drawLine(svg, xScale, yScale, movingAverages50, "orange");
+  drawLine(svg, xScale, yScale, movingAverages50, "maroon");
 
   // plot uptrend
   const uptrendStart = processedData[priorMoveStartIndex];
