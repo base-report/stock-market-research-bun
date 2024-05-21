@@ -110,7 +110,7 @@ const fitLine = (
     }
   }
 
-  const medianSlope = (slopes: number[]): number => {
+  const medianSlope = (): number => {
     const sortedSlopes = slopes.slice().sort((a, b) => a - b);
     const middle = Math.floor(sortedSlopes.length / 2);
     if (sortedSlopes.length % 2 === 0) {
@@ -120,12 +120,12 @@ const fitLine = (
     }
   };
 
-  const slope = medianSlope(slopes);
+  const slope = medianSlope();
   const intercepts: number[] = data.map(
     (point, index) => keyFunc(point) - slope * index,
   );
 
-  const medianIntercept = (intercepts: number[]): number => {
+  const medianIntercept = (): number => {
     const sortedIntercepts = intercepts.slice().sort((a, b) => a - b);
     const middle = Math.floor(sortedIntercepts.length / 2);
     if (sortedIntercepts.length % 2 === 0) {
@@ -135,7 +135,7 @@ const fitLine = (
     }
   };
 
-  const intercept = medianIntercept(intercepts);
+  const intercept = medianIntercept();
 
   return { slope, intercept };
 };

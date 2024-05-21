@@ -3,7 +3,11 @@ import type { Trendline } from "../schemas/Trendline";
 
 import * as d3 from "d3";
 import { JSDOM } from "jsdom";
-import { calculateMovingAverage, formatVolume } from "../util/chart";
+import {
+  calculateMovingAverage,
+  formatVolume,
+  calculateScalingFactor,
+} from "../util/chart";
 
 const drawLine = (
   svg: d3.Selection<SVGElement, unknown, null, undefined>,
@@ -36,8 +40,10 @@ const plotTrendline = (
   color: string | d3.ValueFn<SVGPathElement, unknown, string> | undefined,
   strokeWidth: number,
 ) => {
-  const xStart = xScale(data[0].date);
-  const xEnd = xScale(data[data.length - 1].date) + xScale.bandwidth();
+  const halfCandleWidth = xScale.bandwidth() / 2;
+
+  const xStart = xScale(data[0].date) + halfCandleWidth;
+  const xEnd = xScale(data[data.length - 1].date) + halfCandleWidth;
 
   const yStartPrice = trendline.slope + trendline.intercept;
   const yEndPrice = (data.length - 1) * trendline.slope + trendline.intercept;
@@ -52,6 +58,21 @@ const plotTrendline = (
     .attr("x2", xEnd)
     .attr("y2", yEnd)
     .attr("stroke", color)
+    .attr("stroke-width", strokeWidth);
+
+  // Extrapolate the trendline to the right for 3 more candles
+  // use dashed line to indicate extrapolation
+  const xExtrapolated = xEnd + halfCandleWidth * 6;
+  const yExtrapolated = yEndPrice + 3 * trendline.slope;
+
+  svg
+    .append("line")
+    .attr("x1", xEnd)
+    .attr("y1", yEnd)
+    .attr("x2", xExtrapolated)
+    .attr("y2", yScale(yExtrapolated))
+    .attr("stroke", color)
+    .attr("stroke-dasharray", "3")
     .attr("stroke-width", strokeWidth);
 };
 
@@ -263,7 +284,7 @@ const generateChart = (
   // plot consolidation
   const consolidationData = processedData.slice(
     consolidationStartIndex,
-    consolidationEndIndex + 1,
+    consolidationEndIndex,
   );
 
   plotTrendline(

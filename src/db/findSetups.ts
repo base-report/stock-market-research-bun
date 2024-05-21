@@ -76,8 +76,8 @@ const calculateDollarVolume = (
 
 const priorMoveMaxDays = 50;
 const priorMoveMinPercentage = 0.3;
-const trendlineMaxSlope = 0.05;
-const trendlineMinDays = 7;
+const trendlineMaxSlope = 0.15;
+const trendlineMinDays = 10;
 const trendlineMaxDays = 40;
 
 const findPriorMove = (
@@ -132,20 +132,23 @@ const findPriorMove = (
 
 const findTrendlineWithBreakoutIndex = (
   data: NonNullableDailyPricesObject[],
-  index: number,
+  priorMoveHighIndex: number,
 ):
   | { trendline: Trendline; index: number; trendlineBreakPrice: number }
   | undefined => {
   let trendline: Trendline | undefined;
 
   for (let offset = trendlineMinDays; offset <= trendlineMaxDays; offset++) {
-    const endIndex = index + offset;
+    const endIndex = priorMoveHighIndex + offset - 1;
     if (endIndex >= data.length) break;
 
-    const trendlineData = data.slice(index, endIndex);
-    const { slope, intercept } = fitLine(trendlineData, (d) => d.high);
-    const breakoutPrice = slope * data[index].high + intercept;
-    const isBreakout = data[endIndex + 1]?.close > breakoutPrice;
+    const trendlineData = data.slice(priorMoveHighIndex, endIndex);
+    const trendlineFit = fitLine(trendlineData, (d) => d.high);
+    if (!trendlineFit) continue;
+    const { slope, intercept } = trendlineFit;
+
+    const breakoutPrice = slope * (endIndex - priorMoveHighIndex) + intercept;
+    const isBreakout = data[endIndex]?.close > breakoutPrice;
 
     const withinMaxSlope = Math.abs(slope) <= trendlineMaxSlope;
 
@@ -173,7 +176,8 @@ const findHighestPriceAndExit = (
 
   const entryLOD = data[trade.entry.index].low;
 
-  for (let i = index; i < data.length; i++) {
+  // Start counting from the day after entry
+  for (let i = index + 1; i < data.length; i++) {
     if (data[i].high > highestPrice.price) {
       highestPrice = {
         index: i,
@@ -206,7 +210,8 @@ const findHighestPriceAndExit = (
 };
 
 const findSetups = () => {
-  const { code, daily } = getHistoricalPrices("CVNA");
+  const { code, daily } = getHistoricalPrices("AMD");
+  console.log(daily.length);
   const decoder = new TextDecoder();
   const jsonString = decoder.decode(daily);
   const historicalPrices: HistoricalPrices = JSON.parse(jsonString);
@@ -228,8 +233,7 @@ const findSetups = () => {
 
         const adr = calculateADR(processedData, index);
 
-        // if close is more than 1 x ADR above the high of the prior move, skip
-        // we don't want to enter trades that are too extended
+        // Skip trades that are too extended
         if (
           processedData[index].close >
           processedData[priorMove.highIndex].high * (1 + adr)
@@ -241,12 +245,19 @@ const findSetups = () => {
           slope: trendline.slope,
           days: index - priorMove.highIndex,
           startIndex: priorMove.highIndex,
-          endIndex: index - 1,
+          endIndex: index,
         };
 
         if (consolidation) {
           const price = processedData[index].close;
           if (price <= trendlineBreakPrice) {
+            continue;
+          }
+
+          const dollarVolume = calculateDollarVolume(processedData, index);
+
+          // Skip trades with low dollar volume
+          if (dollarVolume < 1000000) {
             continue;
           }
 
@@ -256,19 +267,18 @@ const findSetups = () => {
               index,
               trendlineBreakPrice,
               adr,
-              dollarVolume: calculateDollarVolume(processedData, index),
+              dollarVolume,
             },
           };
 
-          // look for a setup with overlapping consolidation dates
+          // look for a setup with overlapping trading dates
           const existingSetup = setups.find((setup) => {
-            if (
-              setup.consolidation &&
-              setup.consolidation.startIndex <= consolidation.endIndex &&
-              setup.consolidation.endIndex >= consolidation.startIndex
-            ) {
-              return true;
-            }
+            return (
+              setup.priorMove.lowIndex <= priorMove.lowIndex &&
+              setup.priorMove.highIndex >= priorMove.highIndex &&
+              setup.consolidation?.startIndex <= consolidation.startIndex &&
+              setup.consolidation?.endIndex >= consolidation.endIndex
+            );
           });
 
           if (trade && !existingSetup) {
@@ -277,7 +287,7 @@ const findSetups = () => {
             const { exit, highestPrice } = findHighestPriceAndExit(
               processedData,
               trade,
-              index + 1,
+              index,
             );
 
             trade.exit = exit;

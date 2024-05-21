@@ -21,6 +21,7 @@
     "typescript": "^5.0.0"
   },
   "scripts": {
-    "dev": "bun run src/index.ts"
+    "dev": "bun run src/index.ts",
+    "test": "bun test --watch"
   }
 }
