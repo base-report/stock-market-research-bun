@@ -93,6 +93,8 @@ const calculateScalingFactor = (
 };
 
 // use the Theil-Sen estimator to fit a trendline
+// this is a variation that uses weighted medians
+// to give more weight to the more recent data
 const fitLine = (
   data: NonNullableDailyPricesObject[],
   keyFunc: (d: NonNullableDailyPricesObject) => number,
@@ -102,40 +104,46 @@ const fitLine = (
   }
 
   const slopes: number[] = [];
+  const weights: number[] = [];
 
+  // Calculate slopes for all pairs of points and their corresponding weights
   for (let i = 0; i < data.length - 1; i++) {
     for (let j = i + 1; j < data.length; j++) {
       const slope = (keyFunc(data[j]) - keyFunc(data[i])) / (j - i);
       slopes.push(slope);
+      weights.push(i + 1 + (j + 1)); // Weights increasing linearly
     }
   }
 
-  const medianSlope = (): number => {
-    const sortedSlopes = slopes.slice().sort((a, b) => a - b);
-    const middle = Math.floor(sortedSlopes.length / 2);
-    if (sortedSlopes.length % 2 === 0) {
-      return (sortedSlopes[middle - 1] + sortedSlopes[middle]) / 2;
-    } else {
-      return sortedSlopes[middle];
+  // Calculate the weighted median slope
+  const weightedMedian = (values: number[], weights: number[]): number => {
+    const sortedIndices = values
+      .map((val, index) => index)
+      .sort((a, b) => values[a] - values[b]);
+    const sortedValues = sortedIndices.map((index) => values[index]);
+    const sortedWeights = sortedIndices.map((index) => weights[index]);
+
+    const totalWeight = sortedWeights.reduce((acc, weight) => acc + weight, 0);
+    let cumulativeWeight = 0;
+    for (let i = 0; i < sortedValues.length; i++) {
+      cumulativeWeight += sortedWeights[i];
+      if (cumulativeWeight >= totalWeight / 2) {
+        return sortedValues[i];
+      }
     }
+    return sortedValues[sortedValues.length - 1]; // fallback
   };
 
-  const slope = medianSlope();
+  const slope = weightedMedian(slopes, weights);
+
+  // Calculate intercepts based on the weighted median slope
   const intercepts: number[] = data.map(
     (point, index) => keyFunc(point) - slope * index,
   );
 
-  const medianIntercept = (): number => {
-    const sortedIntercepts = intercepts.slice().sort((a, b) => a - b);
-    const middle = Math.floor(sortedIntercepts.length / 2);
-    if (sortedIntercepts.length % 2 === 0) {
-      return (sortedIntercepts[middle - 1] + sortedIntercepts[middle]) / 2;
-    } else {
-      return sortedIntercepts[middle];
-    }
-  };
-
-  const intercept = medianIntercept();
+  // Calculate the weighted median intercept
+  const interceptWeights = data.map((_, index) => index + 1);
+  const intercept = weightedMedian(intercepts, interceptWeights);
 
   return { slope, intercept };
 };

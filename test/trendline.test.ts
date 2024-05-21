@@ -11,10 +11,7 @@ const mockData = [
 describe("trendline", () => {
   test("should return a valid trendline", () => {
     const trendline = fitLine(mockData, (x) => x.high);
-    console.log(trendline);
-    expect(trendline).toStrictEqual({
-      slope: 0.04285714285714296,
-      intercept: 10.37142857142857,
-    });
+    expect(trendline.slope.toFixed(2)).toBe("0.05");
+    expect(trendline.intercept.toFixed(2)).toBe("10.35");
   });
 });
