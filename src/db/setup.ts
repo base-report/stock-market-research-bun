@@ -49,10 +49,43 @@ const createHistoricalPricesTable = (db: Database) => {
   query.run();
 };
 
+const createTradesTable = (db: Database) => {
+  const query = db.query(`
+    CREATE TABLE trades (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      code TEXT,
+      prior_move_low_date TEXT,
+      prior_move_high_date TEXT,
+      prior_move_pct REAL,
+      consolidation_slope REAL,
+      consolidation_days INTEGER,
+      consolidation_start_date TEXT,
+      consolidation_end_date TEXT,
+      entry_price REAL,
+      entry_date TEXT,
+      entry_trendline_break_price REAL,
+      entry_adr_pct REAL,
+      entry_dollar_volume REAL,
+      highest_price_date TEXT,
+      highest_price REAL,
+      highest_price_days INTEGER,
+      exit_price REAL,
+      exit_date TEXT,
+      exit_reason TEXT,
+      exit_days INTEGER,
+      gain_pct REAL AS ((exit_price - entry_price) / entry_price * 100) VIRTUAL,
+      max_possible_gain_pct REAL AS ((highest_price - entry_price) / entry_price * 100) VIRTUAL,
+      unrealized_gain_pct_from_exit REAL AS ((highest_price - exit_price) / exit_price * 100) VIRTUAL
+    );
+  `);
+  query.run();
+};
+
 const createTables = () => {
   createSymbolsTable(db);
   createStockInfoTable(db);
   createHistoricalPricesTable(db);
+  createTradesTable(db);
 };
 
 export { createTables };

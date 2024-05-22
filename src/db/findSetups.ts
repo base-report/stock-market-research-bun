@@ -1,48 +1,14 @@
 import type { HistoricalPrices } from "../schemas/HistoricalPrices";
 import type { Trendline } from "../schemas/Trendline";
 import type { NonNullableDailyPricesObject } from "../schemas/HistoricalPrices";
+import type { Setup } from "../schemas/Setup";
 
 import { DateTime } from "luxon";
+import sharp from "sharp";
 import { getHistoricalPrices } from "./historicalPrices";
 import { generateChart } from "../chart/svg";
 import { processData, fitLine } from "../util/chart";
-import sharp from "sharp";
-
-interface Trade {
-  entry: {
-    price: number;
-    index: number;
-    trendlineBreakPrice: number;
-    adr: number;
-    dollarVolume: number;
-  };
-  exit?: {
-    price: number;
-    index: number;
-    reason: string;
-    days?: number;
-  };
-  highestPrice?: {
-    index: number;
-    price: number;
-    days: number;
-  };
-}
-
-interface Setup {
-  priorMove: {
-    lowIndex: number;
-    highIndex: number;
-    percentage: number;
-  };
-  consolidation?: {
-    slope: number;
-    days: number;
-    startIndex: number;
-    endIndex: number;
-  };
-  trade?: Trade;
-}
+import { addTrades } from "../db/trade";
 
 const calculateSMA = (
   data: NonNullableDailyPricesObject[],
@@ -113,19 +79,23 @@ const findPriorMove = (
     }
   }
 
-  const percentage =
-    (data[highIndex].high - data[lowIndex].low) / data[lowIndex].low;
+  const pct = (data[highIndex].high - data[lowIndex].low) / data[lowIndex].low;
 
   const withinMaxDays = highIndex - lowIndex <= priorMoveMaxDays;
-  if (
-    percentage >= priorMoveMinPercentage &&
-    highIndex > lowIndex &&
-    withinMaxDays
-  ) {
+  if (pct >= priorMoveMinPercentage && highIndex > lowIndex && withinMaxDays) {
+    const highDate = DateTime.fromJSDate(data[highIndex].date).toFormat(
+      "yyyy-MM-dd",
+    );
+    const lowDate = DateTime.fromJSDate(data[lowIndex].date).toFormat(
+      "yyyy-MM-dd",
+    );
+
     return {
       highIndex,
       lowIndex,
-      percentage,
+      pct,
+      highDate,
+      lowDate,
     };
   }
 };
@@ -163,16 +133,28 @@ const findTrendlineWithBreakoutIndex = (
 
 const findHighestPriceAndExit = (
   data: NonNullableDailyPricesObject[],
-  trade: Trade,
+  trade: Setup["trade"],
   index: number,
-): { exit: Trade["exit"]; highestPrice: Trade["highestPrice"] } | undefined => {
-  let highestPrice = {
+):
+  | {
+      exit: Setup["trade"]["exit"];
+      highestPrice: Setup["trade"]["highestPrice"];
+    }
+  | undefined => {
+  let highestPrice: Setup["trade"]["highestPrice"] = {
     index: trade.entry.index,
     price: trade.entry.price,
     days: 1,
+    date: "",
   };
 
-  let exit: Trade["exit"] | undefined;
+  let exit: Setup["trade"]["exit"] = {
+    price: 0,
+    index: 0,
+    days: 0,
+    reason: "",
+    date: "",
+  };
 
   const entryLOD = data[trade.entry.index].low;
 
@@ -183,6 +165,7 @@ const findHighestPriceAndExit = (
         index: i,
         price: data[i].high,
         days: i - trade.entry.index,
+        date: DateTime.fromJSDate(data[i].date).toFormat("yyyy-MM-dd"),
       };
     }
     if (data[i].close < entryLOD) {
@@ -191,6 +174,7 @@ const findHighestPriceAndExit = (
         index: i,
         days: i - trade.entry.index,
         reason: "low of the day",
+        date: DateTime.fromJSDate(data[i].date).toFormat("yyyy-MM-dd"),
       };
       break;
     }
@@ -201,6 +185,7 @@ const findHighestPriceAndExit = (
         index: i,
         days: i - trade.entry.index,
         reason: "SMA10",
+        date: DateTime.fromJSDate(data[i].date).toFormat("yyyy-MM-dd"),
       };
       break;
     }
@@ -210,8 +195,7 @@ const findHighestPriceAndExit = (
 };
 
 const findSetups = () => {
-  const { code, daily } = getHistoricalPrices("AMD");
-  console.log(daily.length);
+  const { code, daily } = getHistoricalPrices("NVAX");
   const decoder = new TextDecoder();
   const jsonString = decoder.decode(daily);
   const historicalPrices: HistoricalPrices = JSON.parse(jsonString);
@@ -246,6 +230,12 @@ const findSetups = () => {
           days: index - priorMove.highIndex,
           startIndex: priorMove.highIndex,
           endIndex: index,
+          startDate: DateTime.fromJSDate(
+            processedData[priorMove.highIndex].date,
+          ).toFormat("yyyy-MM-dd"),
+          endDate: DateTime.fromJSDate(processedData[index].date).toFormat(
+            "yyyy-MM-dd",
+          ),
         };
 
         if (consolidation) {
@@ -268,6 +258,9 @@ const findSetups = () => {
               trendlineBreakPrice,
               adr,
               dollarVolume,
+              date: DateTime.fromJSDate(processedData[index].date).toFormat(
+                "yyyy-MM-dd",
+              ),
             },
           };
 
@@ -294,6 +287,7 @@ const findSetups = () => {
             trade.highestPrice = highestPrice;
 
             const setup: Setup = {
+              code,
               priorMove,
               consolidation,
               trade,
@@ -330,13 +324,7 @@ const findSetups = () => {
               trendline,
             );
             const chartBuffer = Buffer.from(chart);
-            const entryDate = DateTime.fromJSDate(
-              processedData[setup.trade.entry.index].date,
-            ).toFormat("yyyy-MM-dd");
-            const exitDate = DateTime.fromJSDate(
-              processedData[setup.trade.exit?.index].date,
-            ).toFormat("yyyy-MM-dd");
-            const filename = `${code}-${entryDate}-${exitDate}.png`;
+            const filename = `${code}-${setup.trade.entry.date}-${setup.trade.exit.date}.png`;
             sharp(chartBuffer).png().toFile(`./charts/${filename}`);
             console.log("Chart saved to", filename);
           }
@@ -344,7 +332,7 @@ const findSetups = () => {
       }
     }
   }
-  console.log(setups.length);
+  addTrades(setups);
 };
 
 export { findSetups };
