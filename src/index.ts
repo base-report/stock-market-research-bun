@@ -21,7 +21,11 @@ console.log(`Found ${codes.length} symbols`);
 console.time("find setups");
 for (const code of codes) {
   console.time(`find setups for ${code}`);
-  findSetups(code);
+  try {
+    findSetups(code);
+  } catch (e) {
+    console.error(e);
+  }
   console.timeEnd(`find setups for ${code}`);
   // wait 100ms between each code
   await new Promise((resolve) => setTimeout(resolve, 100));

@@ -315,6 +315,9 @@ const generateChart = (
   );
 
   // Plot entry and exit points
+  if (!processedData[entryIndex] || !processedData[exitIndex]) {
+    return;
+  }
   plotEntryExit(svg, xScale, yScale, entryIndex, exitIndex, processedData);
 
   return d3.select(document.body).select("svg").node().outerHTML;
