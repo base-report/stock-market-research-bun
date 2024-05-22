@@ -142,8 +142,8 @@ const findHighestPriceAndExit = (
     }
   | undefined => {
   let highestPrice: Setup["trade"]["highestPrice"] = {
-    index: trade.entry.index,
-    price: trade.entry.price,
+    index: 0,
+    price: 0,
     days: 1,
     date: "",
   };
