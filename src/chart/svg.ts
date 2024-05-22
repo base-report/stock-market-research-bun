@@ -3,11 +3,7 @@ import type { Trendline } from "../schemas/Trendline";
 
 import * as d3 from "d3";
 import { JSDOM } from "jsdom";
-import {
-  calculateMovingAverage,
-  formatVolume,
-  calculateScalingFactor,
-} from "../util/chart";
+import { calculateMovingAverage, formatVolume } from "../util/chart";
 
 const drawLine = (
   svg: d3.Selection<SVGElement, unknown, null, undefined>,
@@ -27,7 +23,7 @@ const drawLine = (
     .datum(data)
     .attr("fill", "none")
     .attr("stroke", color)
-    .attr("stroke-width", 0.5)
+    .attr("stroke-width", 1)
     .attr("d", line);
 };
 
@@ -102,8 +98,8 @@ const plotVolume = (
     .attr("width", xScale.bandwidth() * 0.8)
     .attr("height", (d) => volumeScale(0) - volumeScale(d.volume)) // Corrects the height calculation
 
-    .attr("fill", (d) => (d.open > d.close ? "red" : "green"))
-    .attr("opacity", 0.5);
+    .attr("fill", (d) => (d.open > d.close ? "#EC3323" : "#71FA4C"))
+    .attr("opacity", 0.7);
 
   // Define a separate volume y-axis using the left side
   const volumeAxis = d3
@@ -115,7 +111,9 @@ const plotVolume = (
   svg
     .append("g")
     .attr("transform", `translate(${width}, 0)`) // Use the right side of the main chart area
-    .call(volumeAxis);
+    .call(volumeAxis)
+    .selectAll("text")
+    .attr("fill", "white");
 
   // Add a dashed line above the volume bars
   svg
@@ -124,7 +122,7 @@ const plotVolume = (
     .attr("x2", width)
     .attr("y1", height - 100)
     .attr("y2", height - 100)
-    .attr("stroke", "black")
+    .attr("stroke", "white")
     .attr("stroke-dasharray", "5,5")
     .attr("opacity", 0.5);
 };
@@ -141,34 +139,34 @@ const plotEntryExit = (
   const exit = processedData[exitIndex];
 
   const entryX = xScale(entry.date) + xScale.bandwidth() / 2;
-  const entryY = yScale(entry.low * 0.98);
+  const entryY = yScale(entry.low * 0.97);
 
   const exitX = xScale(exit.date) + xScale.bandwidth() / 2;
-  const exitY = yScale(exit.low * 0.98);
+  const exitY = yScale(exit.low * 0.97);
 
   const triangleSymbol = d3.symbol().type(d3.symbolTriangle).size(42);
   svg
     .append("path")
     .attr("d", triangleSymbol)
-    .attr("transform", `translate(${entryX}, ${entryY}) rotate(0)`) // Adjust rotation if needed
-    .attr("fill", "green");
+    .attr("transform", `translate(${entryX}, ${entryY}) rotate(0)`)
+    .attr("fill", "#71FA4C");
 
   svg
     .append("path")
     .attr("d", triangleSymbol)
-    .attr("transform", `translate(${exitX}, ${exitY}) rotate(0)`) // Adjust rotation if needed
-    .attr("fill", "red");
+    .attr("transform", `translate(${exitX}, ${exitY}) rotate(0)`)
+    .attr("fill", "#EC3323");
 };
 
 const generateChart = (
-  processedData: NonNullableDailyPricesObject[],
-  priorMoveStartIndex: number,
-  priorMoveEndIndex: number,
-  consolidationStartIndex: number,
-  consolidationEndIndex: number,
-  entryIndex: number,
-  exitIndex: number,
-  trendline: Trendline,
+  processedData,
+  priorMoveStartIndex,
+  priorMoveEndIndex,
+  consolidationStartIndex,
+  consolidationEndIndex,
+  entryIndex,
+  exitIndex,
+  trendline,
 ) => {
   const { document } = new JSDOM("").window;
 
@@ -185,14 +183,15 @@ const generateChart = (
     .append("g")
     .attr("transform", `translate(${margin.left},${margin.top})`);
 
-  // Add white background first before other elements
+  // Add dark background
   svg
     .append("rect")
-    .attr("x", -margin.left) // Extend the rectangle to cover the left margin
-    .attr("y", -margin.top) // Extend the rectangle to cover the top margin
+    .attr("x", -margin.left)
+    .attr("y", -margin.top)
     .attr("width", width + margin.left + margin.right)
     .attr("height", height + margin.top + margin.bottom)
-    .attr("fill", "cornsilk");
+    .attr("fill", "black");
+
   // Define scales
   const xScale = d3.scaleBand().range([0, width]).padding(0.1);
   const yScale = d3.scaleLinear().range([height - 100, 0]);
@@ -207,7 +206,7 @@ const generateChart = (
   // Calculate tick values for dates
   const tickValues = processedData
     .map((d, i) => ({ date: d.date, index: i }))
-    .filter((_, i, a) => i % Math.floor(a.length / 10) === 0) // Adjust to get roughly 10 ticks
+    .filter((_, i, a) => i % Math.floor(a.length / 10) === 0)
     .map((d) => d.date);
 
   svg
@@ -218,11 +217,23 @@ const generateChart = (
         .axisBottom(xScale)
         .tickValues(tickValues)
         .tickFormat(d3.timeFormat("%Y-%m-%d")),
-    );
+    )
+    .selectAll("text")
+    .attr("fill", "white");
+
   svg
     .append("g")
     .attr("transform", `translate(${width}, 0)`)
-    .call(d3.axisRight(yScale));
+    .call(d3.axisRight(yScale))
+    .selectAll("text")
+    .attr("fill", "white");
+
+  // Plot volume
+  plotVolume(svg, xScale, width, height, margin, processedData);
+
+  // make axis lines and ticks white
+  svg.selectAll("path").attr("stroke", "white");
+  svg.selectAll("line").attr("stroke", "white");
 
   // Create candlesticks
   const candlesticks = svg
@@ -241,7 +252,7 @@ const generateChart = (
     .attr("x2", (xScale.bandwidth() * 0.8) / 2)
     .attr("y1", (d) => yScale(d.high))
     .attr("y2", (d) => yScale(d.low))
-    .attr("stroke", "black");
+    .attr("stroke", (d) => (d.open > d.close ? "#EC3323" : "#71FA4C"));
 
   // Draw open-close rectangles
   candlesticks
@@ -250,8 +261,8 @@ const generateChart = (
     .attr("y", (d) => yScale(Math.max(d.open, d.close)))
     .attr("height", (d) => Math.abs(yScale(d.open) - yScale(d.close)) || 1)
     .attr("width", xScale.bandwidth() * 0.8)
-    .attr("fill", (d) => (d.open > d.close ? "red" : "green"))
-    .attr("stroke", "black")
+    .attr("fill", (d) => (d.open > d.close ? "#EC3323" : "#71FA4C"))
+    .attr("stroke", (d) => (d.open > d.close ? "#EC3323" : "#71FA4C"))
     .attr("stroke-width", 0.5);
 
   // Plot moving averages
@@ -260,16 +271,17 @@ const generateChart = (
   const movingAverages50 = calculateMovingAverage(processedData, 50);
 
   // Drawing the moving average lines
-  drawLine(svg, xScale, yScale, movingAverages10, "blue");
-  drawLine(svg, xScale, yScale, movingAverages20, "purple");
-  drawLine(svg, xScale, yScale, movingAverages50, "maroon");
+  const lineColors = ["#C931CC", "#FFFC4A", "#CF2E13", "#3D6BD4", "#01C5C4"];
+  drawLine(svg, xScale, yScale, movingAverages10, lineColors[0]);
+  drawLine(svg, xScale, yScale, movingAverages20, lineColors[1]);
+  drawLine(svg, xScale, yScale, movingAverages50, lineColors[2]);
 
   // plot uptrend
   const uptrendStart = processedData[priorMoveStartIndex];
   const uptrendEnd = processedData[priorMoveEndIndex];
 
-  const lineXStart = xScale(uptrendStart.date) - 10; // Offset to the left
-  const lineXEnd = xScale(uptrendEnd.date) - 10; // Consistent offset to the left
+  const lineXStart = xScale(uptrendStart.date) - 10;
+  const lineXEnd = xScale(uptrendEnd.date) - 10;
 
   svg
     .append("line")
@@ -277,9 +289,10 @@ const generateChart = (
     .attr("y1", yScale(uptrendStart.low))
     .attr("x2", lineXEnd)
     .attr("y2", yScale(uptrendEnd.high))
-    .attr("stroke", "grey")
+    .attr("stroke", "white")
     .attr("stroke-width", 1)
-    .attr("stroke-dasharray", "5,5");
+    .attr("stroke-dasharray", "5,5")
+    .attr("opacity", 0.7);
 
   // plot consolidation
   const consolidationData = processedData.slice(
@@ -293,15 +306,12 @@ const generateChart = (
     yScale,
     consolidationData,
     trendline,
-    "black",
+    "white",
     1.5,
   );
 
   // Plot entry and exit points
   plotEntryExit(svg, xScale, yScale, entryIndex, exitIndex, processedData);
-
-  // Plot volume
-  plotVolume(svg, xScale, width, height, margin, processedData);
 
   return d3.select(document.body).select("svg").node().outerHTML;
 };
