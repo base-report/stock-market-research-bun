@@ -42,7 +42,7 @@ const calculateDollarVolume = (
 
 const priorMoveMaxDays = 50;
 const priorMoveMinPercentage = 0.3;
-const trendlineMaxSlope = 0.15;
+const trendlineMaxSlope = 0.1;
 const trendlineMinDays = 10;
 const trendlineMaxDays = 40;
 
@@ -194,8 +194,8 @@ const findHighestPriceAndExit = (
   return { exit, highestPrice };
 };
 
-const findSetups = () => {
-  const { code, daily } = getHistoricalPrices("NVAX");
+const findSetups = (_code: string) => {
+  const { code, daily } = getHistoricalPrices(_code);
   const decoder = new TextDecoder();
   const jsonString = decoder.decode(daily);
   const historicalPrices: HistoricalPrices = JSON.parse(jsonString);
@@ -302,8 +302,11 @@ const findSetups = () => {
             if (chartEndIndex >= processedData.length) {
               chartEndIndex = processedData.length - 1;
             }
-            const priorMoveStartIndex =
+            let priorMoveStartIndex =
               setup.priorMove.lowIndex - chartStartIndex;
+            if (priorMoveStartIndex < 0) {
+              priorMoveStartIndex = 0;
+            }
             const priorMoveEndIndex =
               setup.priorMove.highIndex - chartStartIndex;
             const consolidationStartIndex =
@@ -311,7 +314,11 @@ const findSetups = () => {
             const consolidationEndIndex =
               setup.consolidation.endIndex - chartStartIndex;
             const entryIndex = setup.trade.entry.index - chartStartIndex;
-            const exitIndex = setup.trade.exit?.index - chartStartIndex;
+            let exitIndex = setup.trade.exit?.index - chartStartIndex;
+
+            if (!exitIndex) {
+              exitIndex = chartEndIndex - chartStartIndex;
+            }
 
             const chart = generateChart(
               processedData.slice(chartStartIndex, chartEndIndex),
@@ -323,16 +330,18 @@ const findSetups = () => {
               exitIndex,
               trendline,
             );
-            const chartBuffer = Buffer.from(chart);
-            const filename = `${code}-${setup.trade.entry.date}-${setup.trade.exit.date}.png`;
-            sharp(chartBuffer).png().toFile(`./charts/${filename}`);
-            console.log("Chart saved to", filename);
+            if (chart) {
+              const chartBuffer = Buffer.from(chart);
+              const filename = `${code}-${setup.trade.entry.date}-${setup.trade.exit.date}.png`;
+              sharp(chartBuffer).png().toFile(`./charts/${filename}`);
+            }
           }
         }
       }
     }
   }
   addTrades(setups);
+  console.log(`${code}: ${setups.length}`);
 };
 
 export { findSetups };

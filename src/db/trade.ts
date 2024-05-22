@@ -39,8 +39,7 @@ const addTrades = (setups: Setup[]) => {
     return trades.length;
   });
 
-  const count = insertAll(trades);
-  console.log(`Inserted ${count} trades`);
+  insertAll(trades);
 };
 
 export { addTrades };

@@ -1,5 +1,6 @@
 import { createTables } from "./db/setup";
 import { seed } from "./db/seed";
+import { getAllSymbolCodes } from "./db/symbol";
 import { findSetups } from "./db/findSetups";
 
 // // Create tables
@@ -12,7 +13,17 @@ import { findSetups } from "./db/findSetups";
 // await seed();
 // console.timeEnd("seed data");
 
+// Get all codes
+const codes = getAllSymbolCodes();
+console.log(`Found ${codes.length} symbols`);
+
 // Find setups
 console.time("find setups");
-findSetups();
+for (const code of codes) {
+  console.time(`find setups for ${code}`);
+  findSetups(code);
+  console.timeEnd(`find setups for ${code}`);
+  // wait 100ms between each code
+  await new Promise((resolve) => setTimeout(resolve, 100));
+}
 console.timeEnd("find setups");

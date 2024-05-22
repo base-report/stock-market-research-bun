@@ -280,6 +280,10 @@ const generateChart = (
   const uptrendStart = processedData[priorMoveStartIndex];
   const uptrendEnd = processedData[priorMoveEndIndex];
 
+  if (!uptrendStart || !uptrendEnd) {
+    return;
+  }
+
   const lineXStart = xScale(uptrendStart.date) - 10;
   const lineXEnd = xScale(uptrendEnd.date) - 10;
 
