@@ -284,8 +284,8 @@ const generateChart = (
     return;
   }
 
-  const lineXStart = xScale(uptrendStart.date) - 10;
-  const lineXEnd = xScale(uptrendEnd.date) - 10;
+  const lineXStart = xScale(uptrendStart.date) + xScale.bandwidth() / 2;
+  const lineXEnd = xScale(uptrendEnd.date) + xScale.bandwidth() / 2;
 
   svg
     .append("line")
