@@ -42,4 +42,43 @@ const getLeftoverStockInfoCodes = (): string[] => {
   return symbols.map(([code]) => code);
 };
 
-export { addBulkStockInfo, getLeftoverStockInfoCodes };
+const getAllGICSubIndustries = (): string[] => {
+  const query = db.query(
+    "SELECT DISTINCT gic_sub_industry FROM stock_info WHERE gic_sub_industry IS NOT NULL ORDER BY gic_sub_industry",
+  );
+  const subIndustries = query.values();
+  return subIndustries.map(([gic_sub_industry]) => gic_sub_industry);
+};
+
+const getALLGICIndustries = (): string[] => {
+  const query = db.query(
+    "SELECT DISTINCT gic_industry FROM stock_info WHERE gic_industry IS NOT NULL ORDER BY gic_industry",
+  );
+  const industries = query.values();
+  return industries.map(([gic_industry]) => gic_industry);
+};
+
+const getALLGICGroups = (): string[] => {
+  const query = db.query(
+    "SELECT DISTINCT gic_group FROM stock_info WHERE gic_group IS NOT NULL ORDER BY gic_group",
+  );
+  const groups = query.values();
+  return groups.map(([gic_group]) => gic_group);
+};
+
+const getALLGICSectors = (): string[] => {
+  const query = db.query(
+    "SELECT DISTINCT gic_sector FROM stock_info WHERE gic_sector IS NOT NULL ORDER BY gic_sector",
+  );
+  const sectors = query.values();
+  return sectors.map(([gic_sector]) => gic_sector);
+};
+
+export {
+  addBulkStockInfo,
+  getLeftoverStockInfoCodes,
+  getAllGICSubIndustries,
+  getALLGICIndustries,
+  getALLGICGroups,
+  getALLGICSectors,
+};

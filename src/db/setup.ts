@@ -49,6 +49,19 @@ const createHistoricalPricesTable = (db: Database) => {
   query.run();
 };
 
+const createAggregateHistoricalPricesTable = (db: Database) => {
+  const query = db.query(`
+    CREATE TABLE IF NOT EXISTS aggregate_historical_prices (
+      type TEXT,
+      name TEXT,
+      daily BLOB,
+
+      PRIMARY KEY (type, name)
+    );
+  `);
+  query.run();
+};
+
 const createTradesTable = (db: Database) => {
   const query = db.query(`
     CREATE TABLE trades (
@@ -85,6 +98,7 @@ const createTables = () => {
   createSymbolsTable(db);
   createStockInfoTable(db);
   createHistoricalPricesTable(db);
+  createAggregateHistoricalPricesTable(db);
   createTradesTable(db);
 };
 

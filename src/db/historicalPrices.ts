@@ -1,6 +1,12 @@
 import type { HistoricalPrices } from "../schemas/HistoricalPrices";
 
 import { db } from "./client";
+import {
+  getAllGICSubIndustries,
+  getALLGICIndustries,
+  getALLGICGroups,
+  getALLGICSectors,
+} from "./stockInfo";
 
 const addHistoricalPrices = (historicalPrices: HistoricalPrices) => {
   const query = db.query(
@@ -26,8 +32,14 @@ const getHistoricalPrices = (code: string): HistoricalPrices | null => {
   return historicalPrices;
 };
 
+const createAggregateHistoricalPrices = () => {
+  const allSubIndustries = getAllGICSubIndustries();
+  console.log(allSubIndustries);
+};
+
 export {
   addHistoricalPrices,
   getLeftoverHistoricalPricesCodes,
   getHistoricalPrices,
+  createAggregateHistoricalPrices,
 };
