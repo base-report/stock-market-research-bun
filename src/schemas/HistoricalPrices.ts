@@ -87,10 +87,31 @@ type NonNullableDailyPricesObject = z.infer<
   typeof NonNullableDailyPricesObjectSchema
 >;
 
+const AggregateHistoricalPricesSchema = z.object({
+  type: z.string(),
+  name: z.string(),
+  daily: z.array(NonNullableDailyPricesSchema).transform((array) => {
+    const rows = array.filter((item) => item !== null);
+    const jsonString = JSON.stringify(rows);
+    const encoder = new TextEncoder();
+    const binaryData: Uint8Array = encoder.encode(jsonString);
+
+    return binaryData;
+  }),
+});
+type AggregateHistoricalPrices = z.infer<
+  typeof AggregateHistoricalPricesSchema
+>;
+
 export type {
   DailyPrices,
   HistoricalPrices,
+  AggregateHistoricalPrices,
   NonNullableDailyPrices,
   NonNullableDailyPricesObject,
 };
-export { DailyPricesSchema, HistoricalPricesSchema };
+export {
+  DailyPricesSchema,
+  HistoricalPricesSchema,
+  AggregateHistoricalPricesSchema,
+};
