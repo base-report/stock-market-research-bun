@@ -72,7 +72,8 @@ const getHistoricalPricesForGICSubIndustry = (
   }));
 };
 
-const getAggregateHistoricalPricesForGICIndustry = (
+const getAggregateHistoricalPrices = (
+  type: string,
   subIndustries: string[],
 ): AggregateHistoricalPrices => {
   const subIndustriesString = subIndustries
@@ -81,11 +82,11 @@ const getAggregateHistoricalPricesForGICIndustry = (
   const query = db.query(`
     SELECT $type AS type, name, daily
     FROM aggregate_historical_prices
-    WHERE type='gic_sub_industry' AND name IN (${subIndustriesString})
+    WHERE type=$type AND name IN (${subIndustriesString})
   `);
 
   const historicalPricesList = query.values({
-    $type: "gic_industry",
+    $type: type,
   });
   const decoder = new TextDecoder();
 
@@ -115,7 +116,10 @@ const createAggregateHistoricalPricesForGICIndustry = (
   industry: string,
   subIndustries: string[],
 ) => {
-  const pricesList = getAggregateHistoricalPricesForGICIndustry(subIndustries);
+  const pricesList = getAggregateHistoricalPrices(
+    "gic_sub_industry",
+    subIndustries,
+  );
 
   const daily = constructAggregatedHistoricalPrices(pricesList, true);
   const aggregateHistoricalPrices = AggregateHistoricalPricesSchema.parse({
@@ -128,17 +132,74 @@ const createAggregateHistoricalPricesForGICIndustry = (
   console.log(`Created aggregate historical prices for ${industry}`);
 };
 
+const createAggregateHistoricalPricesForGICGroup = (
+  group: string,
+  industries: string[],
+) => {
+  const pricesList = getAggregateHistoricalPrices("gic_industry", industries);
+
+  const daily = constructAggregatedHistoricalPrices(pricesList, true);
+  const aggregateHistoricalPrices = AggregateHistoricalPricesSchema.parse({
+    type: "gic_group",
+    name: group,
+    daily,
+  });
+
+  addAggregateHistoricalPrices(aggregateHistoricalPrices);
+  console.log(`Created aggregate historical prices for ${group}`);
+};
+
+const createAggregateHistoricalPricesForGICSector = (
+  sector: string,
+  groups: string[],
+) => {
+  const pricesList = getAggregateHistoricalPrices("gic_group", groups);
+
+  const daily = constructAggregatedHistoricalPrices(pricesList, true);
+  const aggregateHistoricalPrices = AggregateHistoricalPricesSchema.parse({
+    type: "gic_sector",
+    name: sector,
+    daily,
+  });
+
+  addAggregateHistoricalPrices(aggregateHistoricalPrices);
+  console.log(`Created aggregate historical prices for ${sector}`);
+};
+
+const createAggregateHistoricalPricesForGICMarket = (sectors: string[]) => {
+  const pricesList = getAggregateHistoricalPrices("gic_sector", sectors);
+
+  const daily = constructAggregatedHistoricalPrices(pricesList, true);
+  const aggregateHistoricalPrices = AggregateHistoricalPricesSchema.parse({
+    type: "gic_market",
+    name: "market",
+    daily,
+  });
+
+  addAggregateHistoricalPrices(aggregateHistoricalPrices);
+  console.log(`Created aggregate historical prices for market`);
+};
+
 const createAggregateHistoricalPrices = () => {
-  // const allSubIndustries = getAllGICSubIndustries();
-  // for (const subIndustry of allSubIndustries) {
-  //   createAggregateHistoricalPricesForGICSubIndustry(subIndustry);
-  // }
+  const allSubIndustries = getAllGICSubIndustries();
+  for (const subIndustry of allSubIndustries) {
+    createAggregateHistoricalPricesForGICSubIndustry(subIndustry);
+  }
   const allIndustriesAndSubIndustries = getALLGICIndustriesAndSubIndustries();
   for (const [industry, subIndustries] of Object.entries(
     allIndustriesAndSubIndustries,
   )) {
     createAggregateHistoricalPricesForGICIndustry(industry, subIndustries);
   }
+  const allGroupsAndIndustries = getALLGICGroupsAndIndustries();
+  for (const [group, industries] of Object.entries(allGroupsAndIndustries)) {
+    createAggregateHistoricalPricesForGICGroup(group, industries);
+  }
+  const allSectorsAndGroups = getALLGICSectorsAndGroups();
+  for (const [sector, groups] of Object.entries(allSectorsAndGroups)) {
+    createAggregateHistoricalPricesForGICSector(sector, groups);
+  }
+  createAggregateHistoricalPricesForGICMarket(Object.keys(allSectorsAndGroups));
 };
 
 export {
