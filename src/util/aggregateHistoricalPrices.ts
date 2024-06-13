@@ -14,7 +14,7 @@ interface GroupedByDateHistoricalPrices {
   };
 }
 
-const getAggregatedHistoricalPrices = (
+const constructAggregatedHistoricalPrices = (
   historicalPricesList: AggregateHistoricalPrices[],
   alreadyAggregated: boolean = false,
 ): AggregateHistoricalPrices["daily"] => {
@@ -86,7 +86,13 @@ const getAggregatedHistoricalPrices = (
     aggregatedTimeseries.push(aggregated);
   }
 
+  if (aggregatedTimeseries.length === 0) {
+    console.error(
+      `No aggregated timeseries data found for ${historicalPricesList}`,
+    );
+  }
+
   return aggregatedTimeseries.sort((a, b) => a[5] - b[5]);
 };
 
-export { getAggregatedHistoricalPrices };
+export { constructAggregatedHistoricalPrices };
