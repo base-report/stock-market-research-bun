@@ -74,15 +74,13 @@ const getHistoricalPricesForGICSubIndustry = (
 
 const getAggregateHistoricalPrices = (
   type: string,
-  subIndustries: string[],
+  names: string[],
 ): AggregateHistoricalPrices => {
-  const subIndustriesString = subIndustries
-    .map((industry) => `'${industry}'`)
-    .join(", ");
+  const namesString = names.map((name) => `'${name}'`).join(", ");
   const query = db.query(`
     SELECT $type AS type, name, daily
     FROM aggregate_historical_prices
-    WHERE type=$type AND name IN (${subIndustriesString})
+    WHERE type=$type AND name IN (${namesString})
   `);
 
   const historicalPricesList = query.values({
@@ -202,9 +200,16 @@ const createAggregateHistoricalPrices = () => {
   createAggregateHistoricalPricesForGICMarket(Object.keys(allSectorsAndGroups));
 };
 
+const getAggregateHistoricalPricesList = () => {
+  const query = db.query("SELECT type, name FROM aggregate_historical_prices");
+  return query.values();
+};
+
 export {
   addHistoricalPrices,
   getLeftoverHistoricalPricesCodes,
   getHistoricalPrices,
   createAggregateHistoricalPrices,
+  getAggregateHistoricalPrices,
+  getAggregateHistoricalPricesList,
 };

@@ -3,6 +3,7 @@ import { seed } from "./db/seed";
 import { getAllSymbolCodes } from "./db/symbol";
 import { findSetups } from "./db/findSetups";
 import { createAggregateHistoricalPrices } from "./db/historicalPrices";
+import { calculateAllPerformanceTechnicals } from "./db/performanceTechnicals";
 
 // // Create tables
 // console.time("createTables");
@@ -33,7 +34,12 @@ import { createAggregateHistoricalPrices } from "./db/historicalPrices";
 // }
 // console.timeEnd("find setups");
 
-// Create aggregate historical prices
-console.time("create aggregate historical prices");
-createAggregateHistoricalPrices();
-console.timeEnd("create aggregate historical prices");
+// // Create aggregate historical prices
+// console.time("create aggregate historical prices");
+// createAggregateHistoricalPrices();
+// console.timeEnd("create aggregate historical prices");
+
+// Calculate all performance technicals
+console.time("calculate all performance technicals");
+calculateAllPerformanceTechnicals();
+console.timeEnd("calculate all performance technicals");

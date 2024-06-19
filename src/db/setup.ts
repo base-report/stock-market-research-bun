@@ -94,12 +94,60 @@ const createTradesTable = (db: Database) => {
   query.run();
 };
 
+const createPerformanceTechnicalsTable = (db: Database) => {
+  const query = db.query(`
+    CREATE TABLE performance_technicals (
+        name TEXT, -- code or aggregate name
+        aggregate_type TEXT,
+        date TEXT,
+    
+        adr_20_pct REAL,
+        price_1 REAL,
+        high_20 REAL,
+        low_20 REAL,
+        high_50 REAL,
+        low_50 REAL,
+        high_200 REAL,
+        low_200 REAL,
+    
+        bpr REAL GENERATED ALWAYS AS (
+          ROUND(
+            (
+              -- Relative Price Change
+              (
+                ((price_1 - low_20) / NULLIF(high_20 - low_20, 0) - 1) +
+                ((price_1 - low_50) / NULLIF(high_50 - low_50, 0) - 1) +
+                ((price_1 - low_200) / NULLIF(high_200 - low_200, 0) - 1)
+              ) / 3 +
+        
+              -- Volatility Adjustment
+              (
+                LOG(MAX(high_20 / NULLIF(low_20, 0.0001), 1)) +
+                LOG(MAX(high_50 / NULLIF(low_50, 0.0001), 1))
+              ) / 2 +
+              
+              -- Modified Consolidation Bonus
+              CASE
+                WHEN price_1 < low_20 AND price_1 < low_50 AND price_1 < low_200 THEN -0.05
+                ELSE 0
+              END
+            ),
+            4  -- Precision
+          )
+        ) STORED,
+        PRIMARY KEY (name, aggregate_type, date)
+    );
+  `);
+  query.run();
+};
+
 const createTables = () => {
   createSymbolsTable(db);
   createStockInfoTable(db);
   createHistoricalPricesTable(db);
   createAggregateHistoricalPricesTable(db);
   createTradesTable(db);
+  createPerformanceTechnicalsTable(db);
 };
 
 export { createTables };
