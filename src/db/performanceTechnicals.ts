@@ -14,6 +14,7 @@ import {
 import { getAllSymbolCodes } from "./symbol";
 import { processData } from "../util/chart";
 import { calculateADR } from "../util/calc";
+import { roundTo } from "../util/number";
 
 const addPerformanceTechnicals = (
   performanceTechnicals: DBPerformanceTechnicalsWrite[],
@@ -62,7 +63,7 @@ const calculatePerformanceTechnicals = (
     // skip first 200 days
     if (index < 200) return;
     const date = DateTime.fromJSDate(data.date).toFormat("yyyy-MM-dd");
-    const adr20 = calculateADR(processedData, index + 1);
+    const adr20 = roundTo(calculateADR(processedData, index + 1) * 100, 2);
     const price1 = processedData[index].close;
     const high20 = Math.max(
       ...processedData.slice(index - 20, index).map((d) => d.high),

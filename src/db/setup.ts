@@ -141,6 +141,18 @@ const createPerformanceTechnicalsTable = (db: Database) => {
   query.run();
 };
 
+const createBPRPercentilesTable = (db: Database) => {
+  const query = db.query(`
+    CREATE TABLE bpr_percentiles (
+        date TEXT,
+        min_bpr REAL,
+        max_bpr REAL,
+        percentile INTEGER
+    );
+  `);
+  query.run();
+};
+
 const createTables = () => {
   createSymbolsTable(db);
   createStockInfoTable(db);
@@ -148,6 +160,7 @@ const createTables = () => {
   createAggregateHistoricalPricesTable(db);
   createTradesTable(db);
   createPerformanceTechnicalsTable(db);
+  createBPRPercentilesTable(db);
 };
 
 export { createTables };
