@@ -113,11 +113,15 @@ program
     "Maximum number of setups to find per symbol",
     parseInt
   )
+  .option("--no-charts", "Skip chart generation for faster processing")
   .action(async (options) => {
     console.log("Finding setups...");
     console.time("find setups");
 
     const maxSetups = options.maxSetups || 0;
+    let totalSetups = 0;
+    let bar: any;
+
     if (maxSetups > 0) {
       console.log(`Limiting to ${maxSetups} setups per symbol`);
     }
@@ -125,8 +129,13 @@ program
     if (options.code) {
       // Process a single code
       console.log(`Processing setup for ${options.code}...`);
+      const generateCharts = options.charts !== false;
+      if (!generateCharts) {
+        console.log("Chart generation disabled for faster processing");
+      }
       try {
-        findSetups(options.code, maxSetups);
+        const setupsFound = findSetups(options.code, maxSetups, generateCharts);
+        totalSetups = setupsFound;
       } catch (e) {
         console.error(`Error processing ${options.code}:`, e);
       }
@@ -138,14 +147,15 @@ program
       console.log(`Found ${codes.length} symbols to process`);
 
       // Create a progress bar
-      const bar = multibar.create(codes.length, 0, { task: "Finding setups" });
+      bar = multibar.create(codes.length, 0, { task: "Finding setups" });
 
-      let totalSetups = 0;
+      totalSetups = 0;
 
       for (let i = 0; i < codes.length; i++) {
         const code = codes[i];
+        const generateCharts = options.charts !== false;
         try {
-          const setupsFound = findSetups(code, maxSetups);
+          const setupsFound = findSetups(code, maxSetups, generateCharts);
           totalSetups += setupsFound;
           bar.update(i + 1, {
             task: `Processed ${code} (${setupsFound} setups)`,
@@ -243,6 +253,7 @@ program
     parseInt
   )
   .option("-c, --code <code>", "Process a specific symbol code")
+  .option("--no-charts", "Skip chart generation for faster processing")
   .action(async (options) => {
     const maxSetups = options.maxSetups || 0;
     if (maxSetups > 0) {
@@ -296,35 +307,50 @@ program
     console.time("find setups");
 
     let codes: string[];
+    let totalSetups = 0;
+    let bar: any;
     if (options.code) {
       codes = [options.code];
       console.log(`Finding setups for specific symbol: ${options.code}`);
+      const generateCharts = options.charts !== false;
+      if (!generateCharts) {
+        console.log("Chart generation disabled for faster processing");
+      }
+      try {
+        const setupsFound = findSetups(options.code, maxSetups, generateCharts);
+        totalSetups = setupsFound;
+      } catch (e) {
+        console.error(`Error processing ${options.code}:`, e);
+      }
     } else {
       codes = getAllSymbolCodes();
       console.log(`Found ${codes.length} symbols to process`);
-    }
 
-    // Create a progress bar
-    const bar = multibar.create(codes.length, 0, { task: "Finding setups" });
+      // Create a progress bar
+      bar = multibar.create(codes.length, 0, { task: "Finding setups" });
 
-    let totalSetups = 0;
+      totalSetups = 0;
 
-    for (let i = 0; i < codes.length; i++) {
-      const code = codes[i];
-      try {
-        const setupsFound = findSetups(code, maxSetups);
-        totalSetups += setupsFound;
-        bar.update(i + 1, {
-          task: `Processed ${code} (${setupsFound} setups)`,
-        });
-      } catch (e) {
-        console.error(`Error processing ${code}:`, e);
+      for (let i = 0; i < codes.length; i++) {
+        const code = codes[i];
+        const generateCharts = options.charts !== false;
+        try {
+          const setupsFound = findSetups(code, maxSetups, generateCharts);
+          totalSetups += setupsFound;
+          bar.update(i + 1, {
+            task: `Processed ${code} (${setupsFound} setups)`,
+          });
+        } catch (e) {
+          console.error(`Error processing ${code}:`, e);
+        }
+        // wait 100ms between each code
+        await new Promise((resolve) => setTimeout(resolve, 100));
       }
-      // wait 100ms between each code
-      await new Promise((resolve) => setTimeout(resolve, 100));
     }
 
-    bar.stop();
+    if (!options.code) {
+      bar.stop();
+    }
     console.log(`Total setups found: ${totalSetups}`);
     console.timeEnd("find setups");
 

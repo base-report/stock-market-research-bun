@@ -1,4 +1,5 @@
 import type { NonNullableDailyPricesObject } from "../schemas/HistoricalPrices";
+import { getCache } from "./cache";
 
 /**
  * Calculate the interquartile range (IQR) for a set of values
@@ -93,30 +94,36 @@ const calculateATR = (
 const calculateRangeSlope = (data: NonNullableDailyPricesObject[]): number => {
   if (data.length < 5) return 0;
 
-  // Calculate midpoints for each day
-  const midpoints = data.map((d) => (d.high + d.low) / 2);
+  // Use cache to avoid recalculating the same slope
+  const cache = getCache();
+  const cacheKey = `rangeslope:${data[0].date.toISOString()}:${data.length}`;
 
-  // Use linear regression to calculate slope
-  let sumX = 0;
-  let sumY = 0;
-  let sumXY = 0;
-  let sumX2 = 0;
+  return cache.getOrCalculate(cacheKey, () => {
+    // Calculate midpoints for each day
+    const midpoints = data.map((d) => (d.high + d.low) / 2);
 
-  for (let i = 0; i < midpoints.length; i++) {
-    sumX += i;
-    sumY += midpoints[i];
-    sumXY += i * midpoints[i];
-    sumX2 += i * i;
-  }
+    // Use linear regression to calculate slope
+    let sumX = 0;
+    let sumY = 0;
+    let sumXY = 0;
+    let sumX2 = 0;
 
-  const n = midpoints.length;
-  const slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
+    for (let i = 0; i < midpoints.length; i++) {
+      sumX += i;
+      sumY += midpoints[i];
+      sumXY += i * midpoints[i];
+      sumX2 += i * i;
+    }
 
-  // Normalize slope by dividing by the average price
-  const avgPrice = sumY / n;
-  const normalizedSlope = slope / avgPrice;
+    const n = midpoints.length;
+    const slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
 
-  return normalizedSlope;
+    // Normalize slope by dividing by the average price
+    const avgPrice = sumY / n;
+    const normalizedSlope = slope / avgPrice;
+
+    return normalizedSlope;
+  });
 };
 
 /**
@@ -140,118 +147,128 @@ const calculateConsolidationBounds = (
   densityScore: number;
   isValidConsolidation: boolean;
 } => {
-  // Apply recency bias - give more weight to recent candles
-  // Split the data into two parts: early phase and recent phase
-  const splitPoint = Math.floor(data.length * 0.4); // First 40% is early phase
-  const earlyPhase = data.slice(0, splitPoint);
-  const recentPhase = data.slice(splitPoint);
+  // Use cache to avoid recalculating the same consolidation bounds
+  const cache = getCache();
+  const cacheKey = `consolbounds:${data[0].date.toISOString()}:${data.length}:${lowerPercentile}:${upperPercentile}:${outlierMultiplier}`;
 
-  // Extract highs and lows with more weight on recent phase
-  let highs: number[] = [];
-  let lows: number[] = [];
+  return cache.getOrCalculate(cacheKey, () => {
+    // Apply recency bias - give more weight to recent candles
+    // Split the data into two parts: early phase and recent phase
+    const splitPoint = Math.floor(data.length * 0.4); // First 40% is early phase
+    const earlyPhase = data.slice(0, splitPoint);
+    const recentPhase = data.slice(splitPoint);
 
-  // Add early phase data (with less weight)
-  earlyPhase.forEach((d) => {
-    highs.push(d.high);
-    lows.push(d.low);
+    // Extract highs and lows with more weight on recent phase
+    let highs: number[] = [];
+    let lows: number[] = [];
+
+    // Add early phase data (with less weight)
+    earlyPhase.forEach((d) => {
+      highs.push(d.high);
+      lows.push(d.low);
+    });
+
+    // Add recent phase data with double weight (add each point twice)
+    recentPhase.forEach((d) => {
+      highs.push(d.high);
+      highs.push(d.high); // Add twice for more weight
+      lows.push(d.low);
+      lows.push(d.low); // Add twice for more weight
+    });
+
+    // Filter outliers with more aggressive multiplier
+    const filteredHighs = filterOutliers(highs, outlierMultiplier);
+    const filteredLows = filterOutliers(lows, outlierMultiplier);
+
+    // Sort the filtered data
+    const sortedHighs = [...filteredHighs].sort((a, b) => a - b);
+    const sortedLows = [...filteredLows].sort((a, b) => a - b);
+
+    // Use percentiles instead of min/max
+    const upperBound = getPercentile(sortedHighs, upperPercentile);
+    const lowerBound = getPercentile(sortedLows, lowerPercentile);
+
+    // Calculate the range
+    const range = upperBound - lowerBound;
+
+    // Calculate ATR for comparison
+    const atr = calculateATR(data);
+
+    // Calculate range-to-ATR ratio (lower is better for consolidation)
+    const rangeToATR = atr > 0 ? range / atr : 999;
+
+    // Calculate what percentage of candles fall within the range with recency bias
+    let totalWeight = 0;
+    let weightedCandlesInRange = 0;
+
+    // We'll use a weighted approach where recent candles count more
+    for (let i = 0; i < data.length; i++) {
+      const candle = data[i];
+      // Calculate recency weight - more recent candles get higher weight
+      // Linear weight from 1.0 to 2.0 based on position
+      const recencyWeight = 1.0 + i / (data.length - 1); // Ranges from 1.0 to 2.0
+
+      // A candle is considered "in range" if its body (open to close) is mostly within the range
+      const bodyHigh = Math.max(candle.open, candle.close);
+      const bodyLow = Math.min(candle.open, candle.close);
+
+      // Calculate how much of the body is in the range
+      const bodySize = bodyHigh - bodyLow;
+      if (bodySize === 0) continue; // Skip dojis
+
+      const overlapHigh = Math.min(bodyHigh, upperBound);
+      const overlapLow = Math.max(bodyLow, lowerBound);
+      const overlapSize = Math.max(0, overlapHigh - overlapLow);
+
+      // Calculate the percentage of the body in range
+      const bodyInRangePercent = overlapSize / bodySize;
+
+      // Add the weighted contribution
+      weightedCandlesInRange += bodyInRangePercent * recencyWeight;
+      totalWeight += recencyWeight;
+    }
+
+    // Calculate density score with recency bias
+    const densityScore =
+      totalWeight > 0 ? weightedCandlesInRange / totalWeight : 0;
+
+    // Calculate the slope of the range
+    const rangeSlope = Math.abs(calculateRangeSlope(data));
+
+    // Determine if this is a valid consolidation
+    // We're more lenient with the slope in either direction (up or down)
+    // This helps capture both bullish and bearish consolidations
+    const rawSlope = calculateRangeSlope(data);
+    const isUpwardSloping = rawSlope > 0;
+    const isDownwardSloping = rawSlope < 0;
+
+    // Allow slightly steeper slopes in either direction
+    // Upward slopes are allowed to be slightly steeper (bullish bias)
+    const slopeLimit = isUpwardSloping
+      ? 0.012
+      : isDownwardSloping
+        ? 0.01
+        : 0.008;
+
+    const isValidConsolidation =
+      rangeToATR < 4.5 && // Range should be less than 4.5x ATR
+      densityScore > 0.65 && // At least 65% of candles should be in range
+      rangeSlope < slopeLimit; // Allow appropriate slopes based on direction
+
+    // Calculate an overall quality score (0-1, higher is better)
+    const rangeQuality =
+      (1 - Math.min(rangeToATR / 5, 1)) * 0.4 + // 40% weight to range/ATR ratio
+      densityScore * 0.4 + // 40% weight to density
+      (1 - Math.min(rangeSlope / 0.01, 1)) * 0.2; // 20% weight to flatness
+
+    return {
+      upperBound,
+      lowerBound,
+      rangeQuality,
+      densityScore,
+      isValidConsolidation,
+    };
   });
-
-  // Add recent phase data with double weight (add each point twice)
-  recentPhase.forEach((d) => {
-    highs.push(d.high);
-    highs.push(d.high); // Add twice for more weight
-    lows.push(d.low);
-    lows.push(d.low); // Add twice for more weight
-  });
-
-  // Filter outliers with more aggressive multiplier
-  const filteredHighs = filterOutliers(highs, outlierMultiplier);
-  const filteredLows = filterOutliers(lows, outlierMultiplier);
-
-  // Sort the filtered data
-  const sortedHighs = [...filteredHighs].sort((a, b) => a - b);
-  const sortedLows = [...filteredLows].sort((a, b) => a - b);
-
-  // Use percentiles instead of min/max
-  const upperBound = getPercentile(sortedHighs, upperPercentile);
-  const lowerBound = getPercentile(sortedLows, lowerPercentile);
-
-  // Calculate the range
-  const range = upperBound - lowerBound;
-
-  // Calculate ATR for comparison
-  const atr = calculateATR(data);
-
-  // Calculate range-to-ATR ratio (lower is better for consolidation)
-  const rangeToATR = atr > 0 ? range / atr : 999;
-
-  // Calculate what percentage of candles fall within the range with recency bias
-  let totalWeight = 0;
-  let weightedCandlesInRange = 0;
-
-  // We'll use a weighted approach where recent candles count more
-  for (let i = 0; i < data.length; i++) {
-    const candle = data[i];
-    // Calculate recency weight - more recent candles get higher weight
-    // Linear weight from 1.0 to 2.0 based on position
-    const recencyWeight = 1.0 + i / (data.length - 1); // Ranges from 1.0 to 2.0
-
-    // A candle is considered "in range" if its body (open to close) is mostly within the range
-    const bodyHigh = Math.max(candle.open, candle.close);
-    const bodyLow = Math.min(candle.open, candle.close);
-
-    // Calculate how much of the body is in the range
-    const bodySize = bodyHigh - bodyLow;
-    if (bodySize === 0) continue; // Skip dojis
-
-    const overlapHigh = Math.min(bodyHigh, upperBound);
-    const overlapLow = Math.max(bodyLow, lowerBound);
-    const overlapSize = Math.max(0, overlapHigh - overlapLow);
-
-    // Calculate the percentage of the body in range
-    const bodyInRangePercent = overlapSize / bodySize;
-
-    // Add the weighted contribution
-    weightedCandlesInRange += bodyInRangePercent * recencyWeight;
-    totalWeight += recencyWeight;
-  }
-
-  // Calculate density score with recency bias
-  const densityScore =
-    totalWeight > 0 ? weightedCandlesInRange / totalWeight : 0;
-
-  // Calculate the slope of the range
-  const rangeSlope = Math.abs(calculateRangeSlope(data));
-
-  // Determine if this is a valid consolidation
-  // We're more lenient with the slope in either direction (up or down)
-  // This helps capture both bullish and bearish consolidations
-  const rawSlope = calculateRangeSlope(data);
-  const isUpwardSloping = rawSlope > 0;
-  const isDownwardSloping = rawSlope < 0;
-
-  // Allow slightly steeper slopes in either direction
-  // Upward slopes are allowed to be slightly steeper (bullish bias)
-  const slopeLimit = isUpwardSloping ? 0.012 : isDownwardSloping ? 0.01 : 0.008;
-
-  const isValidConsolidation =
-    rangeToATR < 4.5 && // Range should be less than 4.5x ATR
-    densityScore > 0.65 && // At least 65% of candles should be in range
-    rangeSlope < slopeLimit; // Allow appropriate slopes based on direction
-
-  // Calculate an overall quality score (0-1, higher is better)
-  const rangeQuality =
-    (1 - Math.min(rangeToATR / 5, 1)) * 0.4 + // 40% weight to range/ATR ratio
-    densityScore * 0.4 + // 40% weight to density
-    (1 - Math.min(rangeSlope / 0.01, 1)) * 0.2; // 20% weight to flatness
-
-  return {
-    upperBound,
-    lowerBound,
-    rangeQuality,
-    densityScore,
-    isValidConsolidation,
-  };
 };
 
 export { calculateIQR, filterOutliers, calculateConsolidationBounds };

@@ -1,4 +1,5 @@
 import type { NonNullableDailyPricesObject } from "../schemas/HistoricalPrices";
+import { getCache } from "./cache";
 
 /**
  * Calculate the average true range (ATR) for a given period
@@ -14,25 +15,31 @@ const calculateATR = (
 ): number => {
   if (startIndex < period) return 0;
 
-  let sum = 0;
-  for (let i = 0; i < period; i++) {
-    const currentIndex = startIndex - i;
-    const currentDay = data[currentIndex];
-    const previousDay = data[currentIndex - 1];
+  // Use cache to avoid recalculating the same ATR values
+  const cache = getCache();
+  const cacheKey = `atr:${data[0].date.toISOString()}:${period}:${startIndex}`;
 
-    // True Range is the greatest of:
-    // 1. Current High - Current Low
-    // 2. |Current High - Previous Close|
-    // 3. |Current Low - Previous Close|
-    const tr1 = currentDay.high - currentDay.low;
-    const tr2 = Math.abs(currentDay.high - previousDay.close);
-    const tr3 = Math.abs(currentDay.low - previousDay.close);
+  return cache.getOrCalculate(cacheKey, () => {
+    let sum = 0;
+    for (let i = 0; i < period; i++) {
+      const currentIndex = startIndex - i;
+      const currentDay = data[currentIndex];
+      const previousDay = data[currentIndex - 1];
 
-    const trueRange = Math.max(tr1, tr2, tr3);
-    sum += trueRange;
-  }
+      // True Range is the greatest of:
+      // 1. Current High - Current Low
+      // 2. |Current High - Previous Close|
+      // 3. |Current Low - Previous Close|
+      const tr1 = currentDay.high - currentDay.low;
+      const tr2 = Math.abs(currentDay.high - previousDay.close);
+      const tr3 = Math.abs(currentDay.low - previousDay.close);
 
-  return sum / period;
+      const trueRange = Math.max(tr1, tr2, tr3);
+      sum += trueRange;
+    }
+
+    return sum / period;
+  });
 };
 
 /**
@@ -51,47 +58,53 @@ const calculateVolatilityContraction = (
   // Need at least 7 days of data for meaningful calculation (reduced from 10)
   if (endIndex - startIndex < 7) return 0;
 
-  const totalDays = endIndex - startIndex;
+  // Use cache to avoid recalculating the same volatility contraction values
+  const cache = getCache();
+  const cacheKey = `volcontract:${data[0].date.toISOString()}:${startIndex}:${endIndex}`;
 
-  // For shorter consolidations, use a different approach
-  if (totalDays < 15) {
-    // Calculate ATR at the beginning of consolidation (first 3 days)
-    const startATR = calculateATR(data, 3, startIndex + 2);
+  return cache.getOrCalculate(cacheKey, () => {
+    const totalDays = endIndex - startIndex;
 
-    // Calculate ATR at the end of consolidation (last 3 days)
-    const endATR = calculateATR(data, 3, endIndex);
+    // For shorter consolidations, use a different approach
+    if (totalDays < 15) {
+      // Calculate ATR at the beginning of consolidation (first 3 days)
+      const startATR = calculateATR(data, 3, startIndex + 2);
 
-    // Calculate percentage contraction
-    if (startATR === 0) return 0;
-    return 1 - endATR / startATR;
-  }
+      // Calculate ATR at the end of consolidation (last 3 days)
+      const endATR = calculateATR(data, 3, endIndex);
 
-  // For longer consolidations, use a more sophisticated approach
-  // that emphasizes recent volatility reduction
+      // Calculate percentage contraction
+      if (startATR === 0) return 0;
+      return 1 - endATR / startATR;
+    }
 
-  // Calculate early phase ATR (first third of consolidation)
-  const earlyPhaseEnd = startIndex + Math.floor(totalDays / 3);
-  const earlyPhaseATR = calculateATR(data, 5, earlyPhaseEnd);
+    // For longer consolidations, use a more sophisticated approach
+    // that emphasizes recent volatility reduction
 
-  // Calculate middle phase ATR
-  const midPhaseEnd = startIndex + Math.floor((totalDays * 2) / 3);
-  const midPhaseATR = calculateATR(data, 5, midPhaseEnd);
+    // Calculate early phase ATR (first third of consolidation)
+    const earlyPhaseEnd = startIndex + Math.floor(totalDays / 3);
+    const earlyPhaseATR = calculateATR(data, 5, earlyPhaseEnd);
 
-  // Calculate late phase ATR (last third of consolidation)
-  const latePhaseATR = calculateATR(data, 5, endIndex);
+    // Calculate middle phase ATR
+    const midPhaseEnd = startIndex + Math.floor((totalDays * 2) / 3);
+    const midPhaseATR = calculateATR(data, 5, midPhaseEnd);
 
-  // Calculate weighted contraction with more emphasis on recent reduction
-  if (earlyPhaseATR === 0) return 0;
+    // Calculate late phase ATR (last third of consolidation)
+    const latePhaseATR = calculateATR(data, 5, endIndex);
 
-  // Calculate contractions between phases
-  const earlyToMidContraction = 1 - midPhaseATR / earlyPhaseATR;
-  const midToLateContraction = 1 - latePhaseATR / midPhaseATR;
+    // Calculate weighted contraction with more emphasis on recent reduction
+    if (earlyPhaseATR === 0) return 0;
 
-  // Weight recent contraction more heavily (70% recent, 30% early)
-  const weightedContraction =
-    earlyToMidContraction * 0.3 + midToLateContraction * 0.7;
+    // Calculate contractions between phases
+    const earlyToMidContraction = 1 - midPhaseATR / earlyPhaseATR;
+    const midToLateContraction = 1 - latePhaseATR / midPhaseATR;
 
-  return weightedContraction;
+    // Weight recent contraction more heavily (70% recent, 30% early)
+    const weightedContraction =
+      earlyToMidContraction * 0.3 + midToLateContraction * 0.7;
+
+    return weightedContraction;
+  });
 };
 
 /**
