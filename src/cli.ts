@@ -7,6 +7,7 @@ import { getAllSymbolCodes } from "./db/symbol";
 import { findSetups } from "./db/findSetups";
 import { createAggregateHistoricalPrices } from "./db/historicalPrices";
 import { calculateAllPerformanceTechnicals } from "./db/performanceTechnicals";
+import { updateTradeMetrics } from "./db/updateTradeMetrics";
 import fs from "fs";
 import path from "path";
 import { Database } from "bun:sqlite";
@@ -199,6 +200,20 @@ program
     console.log("Performance technicals calculated successfully.");
   });
 
+// Update trade metrics command
+program
+  .command("update-trade-metrics")
+  .description(
+    "Update volatility contraction and consolidation quality metrics for trades that don't have them populated"
+  )
+  .action(() => {
+    console.log("Updating trade metrics...");
+    console.time("update trade metrics");
+    const updatedCount = updateTradeMetrics();
+    console.timeEnd("update trade metrics");
+    console.log(`Updated ${updatedCount} trades with metrics successfully.`);
+  });
+
 // Reset charts and trades command
 program
   .command("reset-charts")
@@ -365,6 +380,13 @@ program
     console.time("calculate all performance technicals");
     calculateAllPerformanceTechnicals();
     console.timeEnd("calculate all performance technicals");
+
+    // Update trade metrics
+    console.log("Updating trade metrics...");
+    console.time("update trade metrics");
+    const updatedCount = updateTradeMetrics();
+    console.timeEnd("update trade metrics");
+    console.log(`Updated ${updatedCount} trades with metrics successfully.`);
 
     console.log("All processes completed successfully.");
   });

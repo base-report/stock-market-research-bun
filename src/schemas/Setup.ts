@@ -17,6 +17,8 @@ const SetupSchema = z.object({
     endIndex: z.number(),
     startDate: z.string(),
     endDate: z.string(),
+    volatilityContraction: z.number().optional(),
+    qualityScore: z.number().optional(),
   }),
   trade: z.object({
     entry: z.object({
@@ -66,6 +68,12 @@ const transformSetupSchema = (x: Setup) => ({
   exit_date: x.trade.exit.date,
   exit_reason: x.trade.exit.reason,
   exit_days: x.trade.exit.days,
+  volatility_contraction: x.consolidation.volatilityContraction
+    ? roundTo(x.consolidation.volatilityContraction, 2)
+    : null,
+  consolidation_quality: x.consolidation.qualityScore
+    ? roundTo(x.consolidation.qualityScore, 0)
+    : null,
 });
 
 const DBSetupWriteSchema = SetupSchema.transform(transformSetupSchema);

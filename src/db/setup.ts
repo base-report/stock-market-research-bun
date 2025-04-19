@@ -86,6 +86,8 @@ const createTradesTable = (db: Database) => {
       exit_date TEXT,
       exit_reason TEXT,
       exit_days INTEGER,
+      volatility_contraction REAL,
+      consolidation_quality REAL,
       gain_pct REAL AS ((exit_price - entry_price) / entry_price * 100) VIRTUAL,
       max_possible_gain_pct REAL AS ((highest_price - entry_price) / entry_price * 100) VIRTUAL,
       unrealized_gain_pct_from_exit REAL AS ((highest_price - exit_price) / exit_price * 100) VIRTUAL
@@ -100,7 +102,7 @@ const createPerformanceTechnicalsTable = (db: Database) => {
         name TEXT, -- code or aggregate name
         aggregate_type TEXT,
         date TEXT,
-    
+
         adr_20_pct REAL,
         price_1 REAL,
         high_20 REAL,
@@ -109,7 +111,7 @@ const createPerformanceTechnicalsTable = (db: Database) => {
         low_50 REAL,
         high_200 REAL,
         low_200 REAL,
-    
+
         bpr REAL GENERATED ALWAYS AS (
           ROUND(
             (
@@ -119,13 +121,13 @@ const createPerformanceTechnicalsTable = (db: Database) => {
                 ((price_1 - low_50) / NULLIF(high_50 - low_50, 0) - 1) +
                 ((price_1 - low_200) / NULLIF(high_200 - low_200, 0) - 1)
               ) / 3 +
-        
+
               -- Volatility Adjustment
               (
                 LOG(MAX(high_20 / NULLIF(low_20, 0.0001), 1)) +
                 LOG(MAX(high_50 / NULLIF(low_50, 0.0001), 1))
               ) / 2 +
-              
+
               -- Modified Consolidation Bonus
               CASE
                 WHEN price_1 < low_20 AND price_1 < low_50 AND price_1 < low_200 THEN -0.05

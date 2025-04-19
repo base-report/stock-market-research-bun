@@ -466,6 +466,8 @@ const findSetups = (
           endDate: DateTime.fromJSDate(processedData[endIndex].date).toFormat(
             "yyyy-MM-dd"
           ),
+          volatilityContraction: volatilityContraction,
+          qualityScore: qualityScore,
         };
 
         const price = processedData[endIndex].close;
