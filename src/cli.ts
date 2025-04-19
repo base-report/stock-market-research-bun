@@ -8,6 +8,8 @@ import { findSetups } from "./db/findSetups";
 import { createAggregateHistoricalPrices } from "./db/historicalPrices";
 import { calculateAllPerformanceTechnicals } from "./db/performanceTechnicals";
 import { updateTradeMetrics } from "./db/updateTradeMetrics";
+import { populateBprPercentiles } from "./db/bprPercentiles";
+import { syncToPostgres } from "./db/syncToPostgres";
 import fs from "fs";
 import path from "path";
 import { Database } from "bun:sqlite";
@@ -20,7 +22,7 @@ const multibar = new cliProgress.MultiBar(
     format:
       " {bar} | {task} | {percentage}% | {value}/{total} | ETA: {eta_formatted}",
   },
-  cliProgress.Presets.shades_classic
+  cliProgress.Presets.shades_classic,
 );
 
 // Create a program instance
@@ -107,12 +109,12 @@ program
   .option(
     "-l, --limit <number>",
     "Limit the number of symbols to process",
-    parseInt
+    parseInt,
   )
   .option(
     "-m, --max-setups <number>",
     "Maximum number of setups to find per symbol",
-    parseInt
+    parseInt,
   )
   .option("--no-charts", "Skip chart generation for faster processing")
   .action(async (options) => {
@@ -204,7 +206,7 @@ program
 program
   .command("update-trade-metrics")
   .description(
-    "Update volatility contraction and consolidation quality metrics for trades that don't have them populated"
+    "Update volatility contraction and consolidation quality metrics for trades that don't have them populated",
   )
   .action(() => {
     console.log("Updating trade metrics...");
@@ -212,6 +214,46 @@ program
     const updatedCount = updateTradeMetrics();
     console.timeEnd("update trade metrics");
     console.log(`Updated ${updatedCount} trades with metrics successfully.`);
+  });
+
+// Populate BPR percentiles command
+program
+  .command("populate-bpr-percentiles")
+  .description("Calculate and populate BPR percentiles table")
+  .option(
+    "-d, --date <date>",
+    "Specific date to calculate percentiles for (format: YYYY-MM-DD)",
+  )
+  .action((options) => {
+    console.log("Populating BPR percentiles...");
+    console.time("populate bpr percentiles");
+
+    if (options.date) {
+      console.log(`Calculating percentiles for specific date: ${options.date}`);
+    } else {
+      console.log("Calculating percentiles for all dates");
+    }
+
+    populateBprPercentiles();
+    console.timeEnd("populate bpr percentiles");
+    console.log("BPR percentiles populated successfully.");
+  });
+
+// Sync to PostgreSQL command
+program
+  .command("sync-to-postgres")
+  .description("Sync symbols, stock_info, and trades from SQLite to PostgreSQL")
+  .action(async () => {
+    console.log("Syncing symbols, stock_info, and trades to PostgreSQL...");
+    console.time("sync to postgres");
+    const results = await syncToPostgres();
+    console.timeEnd("sync to postgres");
+    console.log("Data synced to PostgreSQL successfully.");
+    console.log("Records synced:");
+    console.log(`  Symbols: ${results.symbols}`);
+    console.log(`  Stock Info: ${results.stockInfo}`);
+    console.log(`  Trades: ${results.trades}`);
+    console.log(`  Total: ${results.total}`);
   });
 
 // Reset charts and trades command
@@ -260,12 +302,12 @@ program
 program
   .command("run-all")
   .description(
-    "Run the entire process (reset DB, create tables, seed data, find setups, etc.)"
+    "Run the entire process (reset DB, create tables, seed data, find setups, etc.)",
   )
   .option(
     "-m, --max-setups <number>",
     "Maximum number of setups to find per symbol",
-    parseInt
+    parseInt,
   )
   .option("-c, --code <code>", "Process a specific symbol code")
   .option("--no-charts", "Skip chart generation for faster processing")
@@ -387,6 +429,26 @@ program
     const updatedCount = updateTradeMetrics();
     console.timeEnd("update trade metrics");
     console.log(`Updated ${updatedCount} trades with metrics successfully.`);
+
+    // Populate BPR percentiles
+    console.log("Populating BPR percentiles...");
+    console.time("populate bpr percentiles");
+    populateBprPercentiles();
+    console.timeEnd("populate bpr percentiles");
+    console.log("BPR percentiles populated successfully.");
+
+    // Sync to PostgreSQL if POSTGRES_URL is set
+    if (process.env.POSTGRES_URL) {
+      console.log("Syncing symbols, stock_info, and trades to PostgreSQL...");
+      console.time("sync to postgres");
+      const syncResults = await syncToPostgres();
+      console.timeEnd("sync to postgres");
+      console.log(
+        `Synced ${syncResults.total} records to PostgreSQL successfully.`,
+      );
+    } else {
+      console.log("Skipping PostgreSQL sync (POSTGRES_URL not set)");
+    }
 
     console.log("All processes completed successfully.");
   });
