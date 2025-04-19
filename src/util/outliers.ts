@@ -121,6 +121,7 @@ const calculateRangeSlope = (data: NonNullableDailyPricesObject[]): number => {
 
 /**
  * Calculate the consolidation range bounds using percentile-based approach
+ * with recency bias to favor more recent candles
  * @param data Price data
  * @param lowerPercentile Lower percentile (default: 0.10)
  * @param upperPercentile Upper percentile (default: 0.90)
@@ -139,9 +140,29 @@ const calculateConsolidationBounds = (
   densityScore: number;
   isValidConsolidation: boolean;
 } => {
-  // Extract highs and lows
-  const highs = data.map((d) => d.high);
-  const lows = data.map((d) => d.low);
+  // Apply recency bias - give more weight to recent candles
+  // Split the data into two parts: early phase and recent phase
+  const splitPoint = Math.floor(data.length * 0.4); // First 40% is early phase
+  const earlyPhase = data.slice(0, splitPoint);
+  const recentPhase = data.slice(splitPoint);
+
+  // Extract highs and lows with more weight on recent phase
+  let highs: number[] = [];
+  let lows: number[] = [];
+
+  // Add early phase data (with less weight)
+  earlyPhase.forEach((d) => {
+    highs.push(d.high);
+    lows.push(d.low);
+  });
+
+  // Add recent phase data with double weight (add each point twice)
+  recentPhase.forEach((d) => {
+    highs.push(d.high);
+    highs.push(d.high); // Add twice for more weight
+    lows.push(d.low);
+    lows.push(d.low); // Add twice for more weight
+  });
 
   // Filter outliers with more aggressive multiplier
   const filteredHighs = filterOutliers(highs, outlierMultiplier);
@@ -164,9 +185,17 @@ const calculateConsolidationBounds = (
   // Calculate range-to-ATR ratio (lower is better for consolidation)
   const rangeToATR = atr > 0 ? range / atr : 999;
 
-  // Calculate what percentage of candles fall within the range
-  let candlesInRange = 0;
-  for (const candle of data) {
+  // Calculate what percentage of candles fall within the range with recency bias
+  let totalWeight = 0;
+  let weightedCandlesInRange = 0;
+
+  // We'll use a weighted approach where recent candles count more
+  for (let i = 0; i < data.length; i++) {
+    const candle = data[i];
+    // Calculate recency weight - more recent candles get higher weight
+    // Linear weight from 1.0 to 2.0 based on position
+    const recencyWeight = 1.0 + i / (data.length - 1); // Ranges from 1.0 to 2.0
+
     // A candle is considered "in range" if its body (open to close) is mostly within the range
     const bodyHigh = Math.max(candle.open, candle.close);
     const bodyLow = Math.min(candle.open, candle.close);
@@ -179,22 +208,31 @@ const calculateConsolidationBounds = (
     const overlapLow = Math.max(bodyLow, lowerBound);
     const overlapSize = Math.max(0, overlapHigh - overlapLow);
 
-    // If more than 50% of the body is in range, count it
-    if (overlapSize / bodySize > 0.5) {
-      candlesInRange++;
-    }
+    // Calculate the percentage of the body in range
+    const bodyInRangePercent = overlapSize / bodySize;
+
+    // Add the weighted contribution
+    weightedCandlesInRange += bodyInRangePercent * recencyWeight;
+    totalWeight += recencyWeight;
   }
 
-  const densityScore = candlesInRange / data.length;
+  // Calculate density score with recency bias
+  const densityScore =
+    totalWeight > 0 ? weightedCandlesInRange / totalWeight : 0;
 
   // Calculate the slope of the range
   const rangeSlope = Math.abs(calculateRangeSlope(data));
 
   // Determine if this is a valid consolidation
+  // For upward-sloping consolidations, we're more lenient with the slope
+  // This helps capture bullish consolidations like the one in the April-May example
+  const isUpwardSloping = calculateRangeSlope(data) > 0;
+  const slopeLimit = isUpwardSloping ? 0.012 : 0.008; // More lenient with upward slopes
+
   const isValidConsolidation =
-    rangeToATR < 3 && // Range should be less than 3x ATR
-    densityScore > 0.8 && // At least 80% of candles should be in range
-    rangeSlope < 0.005; // Range should be relatively flat
+    rangeToATR < 4.5 && // Range should be less than 4.5x ATR (increased from 4)
+    densityScore > 0.65 && // At least 65% of candles should be in range (reduced from 70%)
+    rangeSlope < slopeLimit; // Allow steeper slopes for upward-sloping consolidations
 
   // Calculate an overall quality score (0-1, higher is better)
   const rangeQuality =

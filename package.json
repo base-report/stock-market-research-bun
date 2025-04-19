@@ -25,7 +25,8 @@
     "dev": "bun run src/index.ts",
     "test": "bun test --watch",
     "cli": "bun run src/cli.ts",
-    "reset-db": "./reset-db.sh"
+    "reset-db": "./reset-db.sh",
+    "reset-charts": "./reset-charts-and-trades.sh"
   },
   "dependencies": {
     "cli-progress": "^3.12.0",

@@ -9,6 +9,7 @@ import { createAggregateHistoricalPrices } from "./db/historicalPrices";
 import { calculateAllPerformanceTechnicals } from "./db/performanceTechnicals";
 import fs from "fs";
 import path from "path";
+import { Database } from "bun:sqlite";
 
 // Create a new progress bar instance
 const multibar = new cliProgress.MultiBar(
@@ -186,6 +187,48 @@ program
     calculateAllPerformanceTechnicals();
     console.timeEnd("calculate all performance technicals");
     console.log("Performance technicals calculated successfully.");
+  });
+
+// Reset charts and trades command
+program
+  .command("reset-charts")
+  .description("Delete all chart files and clear the trades table")
+  .action(() => {
+    console.log("Resetting charts and trades...");
+
+    // Delete all chart files
+    console.log("Deleting chart files...");
+    const chartsDir = "./charts";
+
+    // Create charts directory if it doesn't exist
+    if (!fs.existsSync(chartsDir)) {
+      fs.mkdirSync(chartsDir, { recursive: true });
+    }
+
+    // Read all files in the charts directory
+    const files = fs.readdirSync(chartsDir);
+
+    // Delete each PNG file
+    let deletedCount = 0;
+    for (const file of files) {
+      if (file.endsWith(".png")) {
+        fs.unlinkSync(path.join(chartsDir, file));
+        deletedCount++;
+      }
+    }
+    console.log(`Deleted ${deletedCount} chart files.`);
+
+    // Clear the trades table
+    console.log("Clearing trades table...");
+    try {
+      const db = new Database("data.sqlite");
+      db.exec("DELETE FROM trades");
+      console.log("Trades table cleared successfully.");
+    } catch (error) {
+      console.error("Error clearing trades table:", error);
+    }
+
+    console.log("Reset completed successfully.");
   });
 
 // Run all command
