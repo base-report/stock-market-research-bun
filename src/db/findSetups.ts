@@ -14,6 +14,7 @@ import {
   calculateADR,
   calculateDollarVolume,
 } from "../util/calc";
+import cliProgress from "cli-progress";
 
 const priorMoveMaxDays = 50;
 const priorMoveMinPercentage = 0.3;
@@ -23,7 +24,7 @@ const trendlineMaxDays = 40;
 
 const findPriorMove = (
   data: NonNullableDailyPricesObject[],
-  index: number,
+  index: number
 ): Setup["priorMove"] | undefined => {
   let highIndex = 0;
   let lowIndex = 0;
@@ -59,10 +60,10 @@ const findPriorMove = (
   const withinMaxDays = highIndex - lowIndex <= priorMoveMaxDays;
   if (pct >= priorMoveMinPercentage && highIndex > lowIndex && withinMaxDays) {
     const highDate = DateTime.fromJSDate(data[highIndex].date).toFormat(
-      "yyyy-MM-dd",
+      "yyyy-MM-dd"
     );
     const lowDate = DateTime.fromJSDate(data[lowIndex].date).toFormat(
-      "yyyy-MM-dd",
+      "yyyy-MM-dd"
     );
 
     return {
@@ -77,7 +78,7 @@ const findPriorMove = (
 
 const findTrendlineWithBreakoutIndex = (
   data: NonNullableDailyPricesObject[],
-  priorMoveHighIndex: number,
+  priorMoveHighIndex: number
 ):
   | { trendline: Trendline; index: number; trendlineBreakPrice: number }
   | undefined => {
@@ -109,7 +110,7 @@ const findTrendlineWithBreakoutIndex = (
 const findHighestPriceAndExit = (
   data: NonNullableDailyPricesObject[],
   trade: Setup["trade"],
-  index: number,
+  index: number
 ):
   | {
       exit: Setup["trade"]["exit"];
@@ -185,7 +186,7 @@ const findSetups = (_code: string) => {
     if (priorMove) {
       const res = findTrendlineWithBreakoutIndex(
         processedData,
-        priorMove.highIndex,
+        priorMove.highIndex
       );
       if (res) {
         const { trendline, index, trendlineBreakPrice } = res;
@@ -206,10 +207,10 @@ const findSetups = (_code: string) => {
           startIndex: priorMove.highIndex,
           endIndex: index,
           startDate: DateTime.fromJSDate(
-            processedData[priorMove.highIndex].date,
+            processedData[priorMove.highIndex].date
           ).toFormat("yyyy-MM-dd"),
           endDate: DateTime.fromJSDate(processedData[index].date).toFormat(
-            "yyyy-MM-dd",
+            "yyyy-MM-dd"
           ),
         };
 
@@ -234,7 +235,7 @@ const findSetups = (_code: string) => {
               adr,
               dollarVolume,
               date: DateTime.fromJSDate(processedData[index].date).toFormat(
-                "yyyy-MM-dd",
+                "yyyy-MM-dd"
               ),
             },
           };
@@ -255,7 +256,7 @@ const findSetups = (_code: string) => {
             const { exit, highestPrice } = findHighestPriceAndExit(
               processedData,
               trade,
-              index,
+              index
             );
 
             trade.exit = exit;
@@ -303,7 +304,7 @@ const findSetups = (_code: string) => {
               consolidationEndIndex,
               entryIndex,
               exitIndex,
-              trendline,
+              trendline
             );
             if (chart) {
               const chartBuffer = Buffer.from(chart);

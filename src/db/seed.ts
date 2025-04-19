@@ -11,32 +11,66 @@ import {
   getLeftoverHistoricalPricesCodes,
 } from "./historicalPrices";
 
+import cliProgress from "cli-progress";
+
 const addBulkFundamentals = async (codes: string[]) => {
   const codeChunks = chunk(codes, 500);
 
-  for (const i in codeChunks) {
-    console.log(`Processing chunk ${i} of ${codeChunks.length}...`);
+  // Create a progress bar
+  const bar = new cliProgress.SingleBar({
+    format:
+      " {bar} | {percentage}% | {value}/{total} chunks | ETA: {eta_formatted}",
+    barCompleteChar: "\u2588",
+    barIncompleteChar: "\u2591",
+    hideCursor: true,
+  });
+
+  bar.start(codeChunks.length, 0);
+
+  for (let i = 0; i < codeChunks.length; i++) {
     const chunk = codeChunks[i];
     const bulkFundamentals = await getBulkStockFundamentals(chunk);
     addBulkStockInfo(bulkFundamentals);
+    bar.update(i + 1);
   }
+
+  bar.stop();
 };
 
 const parallelAddHistoricalPrices = async (codes: string[]) => {
+  // Create a progress bar
+  const bar = new cliProgress.SingleBar({
+    format:
+      " {bar} | {percentage}% | {value}/{total} symbols | ETA: {eta_formatted}",
+    barCompleteChar: "\u2588",
+    barIncompleteChar: "\u2591",
+    hideCursor: true,
+  });
+
+  bar.start(codes.length, 0);
+
+  let processed = 0;
+
   await processInBatches(
     codes,
     async (code) => {
       try {
         const historicalPrices = await getHistoricalPrices(code);
         addHistoricalPrices(historicalPrices);
+        processed++;
+        bar.update(processed);
       } catch (error) {
+        processed++;
+        bar.update(processed);
         throw error;
       }
     },
     20, // Batch size
-    (code, error) => console.log("Error processing", code, error),
-    true, // log batch progress
+    (code, error) => console.error("Error processing", code, error),
+    false // Don't log batch progress (we have our own progress bar)
   );
+
+  bar.stop();
 };
 
 const seed = async () => {
@@ -57,11 +91,12 @@ const seed = async () => {
   const symbols = nasdaqSymbols.concat(
     nyseSymbols,
     delistedNasdaqSymbols,
-    delistedNyseSymbols,
+    delistedNyseSymbols
   );
   addSymbols(symbols);
 
   console.log("getExchangeSymbols end");
+  console.timeEnd("getExchangeSymbols");
 
   // Get all symbol codes
   const codes = getAllSymbolCodes();
@@ -73,13 +108,13 @@ const seed = async () => {
   console.log("addBulkFundamentals end");
   console.timeEnd("addBulkFundamentals");
 
-  // Add bulk left over stock info
-  // console.time("addBulkLeftoverStockInfo");
-  // console.log("addBulkLeftoverStockInfo start");
-  // const leftoverStockInfoCodes =  getLeftoverStockInfoCodes();
-  // await addBulkFundamentals(leftoverStockInfoCodes);
-  // console.log("addBulkLeftoverStockInfo end");
-  // console.timeEnd("addBulkLeftoverStockInfo");
+  // // Add bulk left over stock info
+  // // console.time("addBulkLeftoverStockInfo");
+  // // console.log("addBulkLeftoverStockInfo start");
+  // // const leftoverStockInfoCodes =  getLeftoverStockInfoCodes();
+  // // await addBulkFundamentals(leftoverStockInfoCodes);
+  // // console.log("addBulkLeftoverStockInfo end");
+  // // console.timeEnd("addBulkLeftoverStockInfo");
 
   // Add historical prices
   console.time("parallelAddHistoricalPrices");
@@ -88,13 +123,13 @@ const seed = async () => {
   console.log("parallelAddHistoricalPrices end");
   console.timeEnd("parallelAddHistoricalPrices");
 
-  // Add left over historical prices
-  // console.time("addLeftoverHistoricalPrices");
-  // console.log("addLeftoverHistoricalPrices start");
-  // const leftoverHistoricalPricesCodes = getLeftoverHistoricalPricesCodes();
-  // await parallelAddHistoricalPrices(leftoverHistoricalPricesCodes);
-  // console.log("addLeftoverHistoricalPrices end");
-  // console.timeEnd("addLeftoverHistoricalPrices");
+  // // Add left over historical prices
+  // // console.time("addLeftoverHistoricalPrices");
+  // // console.log("addLeftoverHistoricalPrices start");
+  // // const leftoverHistoricalPricesCodes = getLeftoverHistoricalPricesCodes();
+  // // await parallelAddHistoricalPrices(leftoverHistoricalPricesCodes);
+  // // console.log("addLeftoverHistoricalPrices end");
+  // // console.timeEnd("addLeftoverHistoricalPrices");
 };
 
 export { seed };

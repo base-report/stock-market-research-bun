@@ -5,39 +5,39 @@ import { findSetups } from "./db/findSetups";
 import { createAggregateHistoricalPrices } from "./db/historicalPrices";
 import { calculateAllPerformanceTechnicals } from "./db/performanceTechnicals";
 
-// // Create tables
-// console.time("createTables");
-// createTables();
-// console.timeEnd("createTables");
-//
-// // Seed data
-// console.time("seed data");
-// await seed();
-// console.timeEnd("seed data");
+// Create tables
+console.time("createTables");
+createTables();
+console.timeEnd("createTables");
 
-// // Get all codes
-// const codes = getAllSymbolCodes();
-// console.log(`Found ${codes.length} symbols`);
-//
-// // Find setups
-// console.time("find setups");
-// for (const code of codes) {
-//   console.time(`find setups for ${code}`);
-//   try {
-//     findSetups(code);
-//   } catch (e) {
-//     console.error(e);
-//   }
-//   console.timeEnd(`find setups for ${code}`);
-//   // wait 100ms between each code
-//   await new Promise((resolve) => setTimeout(resolve, 100));
-// }
-// console.timeEnd("find setups");
+// Seed data
+console.time("seed data");
+await seed();
+console.timeEnd("seed data");
 
-// // Create aggregate historical prices
-// console.time("create aggregate historical prices");
-// createAggregateHistoricalPrices();
-// console.timeEnd("create aggregate historical prices");
+// Get all codes
+const codes = getAllSymbolCodes();
+console.log(`Found ${codes.length} symbols`);
+
+// Find setups
+console.time("find setups");
+for (const code of codes) {
+  console.time(`find setups for ${code}`);
+  try {
+    findSetups(code);
+  } catch (e) {
+    console.error(e);
+  }
+  console.timeEnd(`find setups for ${code}`);
+  // wait 100ms between each code
+  await new Promise((resolve) => setTimeout(resolve, 100));
+}
+console.timeEnd("find setups");
+
+// Create aggregate historical prices
+console.time("create aggregate historical prices");
+createAggregateHistoricalPrices();
+console.timeEnd("create aggregate historical prices");
 
 // Calculate all performance technicals
 console.time("calculate all performance technicals");
