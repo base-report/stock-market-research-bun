@@ -149,12 +149,12 @@ const findPriorMove = (
  * Find a consolidation range with volatility contraction and breakout
  * with improved detection that favors recent price action
  * @param data Price data
- * @param priorMoveHighIndex Index of the high point of the prior move
+ * @param priorMove Information about the prior move
  * @returns Consolidation range information if found
  */
 const findConsolidationRange = (
   data: NonNullableDailyPricesObject[],
-  priorMoveHighIndex: number
+  priorMove: Setup["priorMove"]
 ):
   | {
       upperBound: number;
@@ -188,7 +188,7 @@ const findConsolidationRange = (
   // We'll try more offsets to better capture consolidations that start a bit later
   // after the prior move high (like in the April-May example)
   for (let offset = 0; offset <= 10; offset++) {
-    const adjustedStartIndex = priorMoveHighIndex + offset;
+    const adjustedStartIndex = priorMove.highIndex + offset;
 
     // Try different consolidation periods
     for (
@@ -232,6 +232,22 @@ const findConsolidationRange = (
           densityScore * 0.2) *
           100
       );
+
+      // Calculate the midpoint of the consolidation range
+      const consolidationMidpoint = (upperBound + lowerBound) / 2;
+
+      // Calculate the midpoint of the prior move
+      const priorMoveLow = data[priorMove.lowIndex].low;
+      const priorMoveHigh = data[priorMove.highIndex].high;
+      const priorMoveMidpoint = (priorMoveHigh + priorMoveLow) / 2;
+
+      // Check if the consolidation is above the midpoint of the prior move
+      // This ensures we're capturing consolidations with momentum
+      const isAbovePriorMoveMidpoint =
+        consolidationMidpoint > priorMoveMidpoint;
+
+      // Skip if the consolidation is below the midpoint of the prior move
+      if (!isAbovePriorMoveMidpoint) continue;
 
       // Check if we have sufficient volatility contraction
       // For shorter consolidations, we're a bit more lenient with volatility contraction
@@ -361,7 +377,7 @@ const findSetups = (_code: string, maxSetups: number = 0) => {
     if (priorMove) {
       const consolidationRange = findConsolidationRange(
         processedData,
-        priorMove.highIndex
+        priorMove
       );
 
       if (consolidationRange) {

@@ -224,15 +224,20 @@ const calculateConsolidationBounds = (
   const rangeSlope = Math.abs(calculateRangeSlope(data));
 
   // Determine if this is a valid consolidation
-  // For upward-sloping consolidations, we're more lenient with the slope
-  // This helps capture bullish consolidations like the one in the April-May example
-  const isUpwardSloping = calculateRangeSlope(data) > 0;
-  const slopeLimit = isUpwardSloping ? 0.012 : 0.008; // More lenient with upward slopes
+  // We're more lenient with the slope in either direction (up or down)
+  // This helps capture both bullish and bearish consolidations
+  const rawSlope = calculateRangeSlope(data);
+  const isUpwardSloping = rawSlope > 0;
+  const isDownwardSloping = rawSlope < 0;
+
+  // Allow slightly steeper slopes in either direction
+  // Upward slopes are allowed to be slightly steeper (bullish bias)
+  const slopeLimit = isUpwardSloping ? 0.012 : isDownwardSloping ? 0.01 : 0.008;
 
   const isValidConsolidation =
-    rangeToATR < 4.5 && // Range should be less than 4.5x ATR (increased from 4)
-    densityScore > 0.65 && // At least 65% of candles should be in range (reduced from 70%)
-    rangeSlope < slopeLimit; // Allow steeper slopes for upward-sloping consolidations
+    rangeToATR < 4.5 && // Range should be less than 4.5x ATR
+    densityScore > 0.65 && // At least 65% of candles should be in range
+    rangeSlope < slopeLimit; // Allow appropriate slopes based on direction
 
   // Calculate an overall quality score (0-1, higher is better)
   const rangeQuality =
