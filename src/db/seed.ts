@@ -73,7 +73,7 @@ const parallelAddHistoricalPrices = async (codes: string[]) => {
   bar.stop();
 };
 
-const seed = async () => {
+const seed = async (specificCode?: string) => {
   // Add exchange symbols
   console.time("getExchangeSymbols");
   console.log("getExchangeSymbols start");
@@ -98,8 +98,15 @@ const seed = async () => {
   console.log("getExchangeSymbols end");
   console.timeEnd("getExchangeSymbols");
 
-  // Get all symbol codes
-  const codes = getAllSymbolCodes();
+  // Get symbol codes - either a specific code or all codes
+  let codes: string[];
+  if (specificCode) {
+    codes = [specificCode];
+    console.log(`Seeding data for specific symbol: ${specificCode}`);
+  } else {
+    codes = getAllSymbolCodes();
+    console.log(`Seeding data for all symbols: ${codes.length} symbols found`);
+  }
 
   // Add bulk stock fundamentals
   console.time("addBulkFundamentals");

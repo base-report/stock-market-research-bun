@@ -33,6 +33,9 @@ bun run cli create-tables
 # Seed the database with data
 bun run cli seed-data
 
+# Seed data for a specific symbol (useful for fixing individual ticker errors)
+bun run cli seed-data --code AAPL
+
 # Find setups for all symbols
 bun run cli find-setups
 
@@ -42,6 +45,12 @@ bun run cli find-setups --code AAPL
 # Find setups for a limited number of symbols
 bun run cli find-setups --limit 10
 
+# Limit the number of setups found per symbol (for testing)
+bun run cli find-setups --max-setups 200
+
+# Combine options
+bun run cli find-setups --limit 50 --max-setups 10
+
 # Create aggregate historical prices
 bun run cli create-aggregate-prices
 
@@ -50,6 +59,15 @@ bun run cli calculate-technicals
 
 # Run the entire process (reset DB, create tables, seed data, find setups, etc.)
 bun run cli run-all
+
+# Run the entire process with a limit on setups per symbol
+bun run cli run-all --max-setups 200
+
+# Run the entire process for a specific symbol only
+bun run cli run-all --code AAPL
+
+# Combine options
+bun run cli run-all --code AAPL --max-setups 10
 ```
 
 You can also use the npm scripts:
@@ -91,7 +109,12 @@ The application uses SQLite for data storage. The database contains the followin
    - Fetch exchange symbols
    - Fetch stock fundamentals
    - Fetch historical prices
-3. Find setups for each symbol
+3. Find setups for each symbol:
+   - Identify prior moves (30%+ price increases)
+   - Find consolidation ranges with volatility contraction
+   - Detect breakouts above the consolidation range
+   - Apply filters (ADR, dollar volume, etc.)
+   - Generate charts with visualization of the consolidation range
 4. Create aggregate historical prices
 5. Calculate performance technicals
 

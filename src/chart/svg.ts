@@ -10,7 +10,7 @@ const drawLine = (
   xScale: d3.ScaleBand<string>,
   yScale: d3.ScaleLinear<number, number>,
   data: { date: Date; average: number }[],
-  color: string | d3.ValueFn<SVGPathElement, unknown, string> | undefined,
+  color: string | d3.ValueFn<SVGPathElement, unknown, string> | undefined
 ) => {
   const line = d3
     .line()
@@ -34,7 +34,7 @@ const plotTrendline = (
   data: NonNullableDailyPricesObject[],
   trendline: Trendline,
   color: string | d3.ValueFn<SVGPathElement, unknown, string> | undefined,
-  strokeWidth: number,
+  strokeWidth: number
 ) => {
   const halfCandleWidth = xScale.bandwidth() / 2;
 
@@ -78,7 +78,7 @@ const plotVolume = (
   width: number,
   height: number,
   margin: { top: number; right: number; bottom: number; left: number },
-  processedData: NonNullableDailyPricesObject[],
+  processedData: NonNullableDailyPricesObject[]
 ) => {
   // Create volume bars
   const volumeScale = d3
@@ -133,7 +133,7 @@ const plotEntryExit = (
   yScale: d3.ScaleLinear<number, number>,
   entryIndex: number,
   exitIndex: number,
-  processedData: NonNullableDailyPricesObject[],
+  processedData: NonNullableDailyPricesObject[]
 ) => {
   const entry = processedData[entryIndex];
   const exit = processedData[exitIndex];
@@ -158,6 +158,18 @@ const plotEntryExit = (
     .attr("fill", "#EC3323");
 };
 
+/**
+ * Type definition for consolidation range visualization
+ */
+type ConsolidationRange = {
+  upperBound: number;
+  lowerBound: number;
+  volatilityContraction: number;
+};
+
+/**
+ * Generate a chart visualization of the setup
+ */
 const generateChart = (
   processedData,
   priorMoveStartIndex,
@@ -167,6 +179,7 @@ const generateChart = (
   entryIndex,
   exitIndex,
   trendline,
+  consolidationRange?: ConsolidationRange
 ) => {
   const { document } = new JSDOM("").window;
 
@@ -216,7 +229,7 @@ const generateChart = (
       d3
         .axisBottom(xScale)
         .tickValues(tickValues)
-        .tickFormat(d3.timeFormat("%Y-%m-%d")),
+        .tickFormat(d3.timeFormat("%Y-%m-%d"))
     )
     .selectAll("text")
     .attr("fill", "white");
@@ -301,18 +314,66 @@ const generateChart = (
   // plot consolidation
   const consolidationData = processedData.slice(
     consolidationStartIndex,
-    consolidationEndIndex,
+    consolidationEndIndex
   );
 
-  plotTrendline(
-    svg,
-    xScale,
-    yScale,
-    consolidationData,
-    trendline,
-    "white",
-    1.5,
-  );
+  // We're no longer using trendlines for the consolidation approach
+  // Keeping the trendline parameter for backward compatibility
+
+  // If consolidation range is provided, visualize it
+  if (consolidationRange) {
+    const { upperBound, lowerBound, volatilityContraction, qualityScore } =
+      consolidationRange;
+
+    // Get the x coordinates for the consolidation range
+    const startX = xScale(processedData[consolidationStartIndex].date);
+    const endX =
+      xScale(processedData[consolidationEndIndex - 1].date) +
+      xScale.bandwidth();
+
+    // Draw the consolidation range as a semi-transparent rectangle
+    svg
+      .append("rect")
+      .attr("x", startX)
+      .attr("y", yScale(upperBound))
+      .attr("width", endX - startX)
+      .attr("height", yScale(lowerBound) - yScale(upperBound))
+      .attr("fill", "rgba(255, 255, 255, 0.15)")
+      .attr("stroke", "rgba(255, 255, 255, 0.7)")
+      .attr("stroke-width", 1.5);
+
+    // Add horizontal lines for upper and lower bounds
+    svg
+      .append("line")
+      .attr("x1", startX)
+      .attr("x2", endX)
+      .attr("y1", yScale(upperBound))
+      .attr("y2", yScale(upperBound))
+      .attr("stroke", "rgba(255, 255, 255, 0.9)")
+      .attr("stroke-width", 1.5);
+
+    svg
+      .append("line")
+      .attr("x1", startX)
+      .attr("x2", endX)
+      .attr("y1", yScale(lowerBound))
+      .attr("y2", yScale(lowerBound))
+      .attr("stroke", "rgba(255, 255, 255, 0.9)")
+      .attr("stroke-width", 1.5);
+
+    // Add volatility contraction label
+    svg
+      .append("text")
+      .attr("x", startX + (endX - startX) / 2)
+      .attr("y", yScale(upperBound) - 5)
+      .attr("text-anchor", "middle")
+      .attr("fill", "white")
+      .attr("font-size", "10px")
+      .attr("font-family", "sans-serif") // Match axis label font
+      .text(
+        `Vol. Contraction: ${Math.round(volatilityContraction * 100)}%${qualityScore ? ` | Quality: ${qualityScore}` : ""}`
+      );
+  }
 
   // Plot entry and exit points
   if (!processedData[entryIndex] || !processedData[exitIndex]) {

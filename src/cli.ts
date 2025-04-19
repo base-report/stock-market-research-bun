@@ -11,11 +11,15 @@ import fs from "fs";
 import path from "path";
 
 // Create a new progress bar instance
-const multibar = new cliProgress.MultiBar({
-  clearOnComplete: false,
-  hideCursor: true,
-  format: ' {bar} | {task} | {percentage}% | {value}/{total} | ETA: {eta_formatted}',
-}, cliProgress.Presets.shades_classic);
+const multibar = new cliProgress.MultiBar(
+  {
+    clearOnComplete: false,
+    hideCursor: true,
+    format:
+      " {bar} | {task} | {percentage}% | {value}/{total} | ETA: {eta_formatted}",
+  },
+  cliProgress.Presets.shades_classic
+);
 
 // Create a program instance
 const program = new Command();
@@ -32,7 +36,7 @@ program
   .description("Reset the database by deleting the existing database file")
   .action(() => {
     const dbPath = process.env.DB_PATH || "./data.sqlite";
-    
+
     if (fs.existsSync(dbPath)) {
       console.log(`Removing existing database file: ${dbPath}`);
       fs.unlinkSync(dbPath);
@@ -44,7 +48,7 @@ program
     // Check for and remove any SQLite journal files
     const dbDir = path.dirname(dbPath);
     const dbName = path.basename(dbPath);
-    
+
     const shmPath = path.join(dbDir, `${dbName}-shm`);
     if (fs.existsSync(shmPath)) {
       fs.unlinkSync(shmPath);
@@ -76,10 +80,19 @@ program
 program
   .command("seed-data")
   .description("Seed the database with data")
-  .action(async () => {
+  .option("-c, --code <code>", "Process a specific symbol code")
+  .action(async (options) => {
     console.log("Seeding data...");
     console.time("seed data");
-    await seed();
+
+    if (options.code) {
+      console.log(`Seeding data for specific symbol: ${options.code}`);
+      await seed(options.code);
+    } else {
+      console.log("Seeding data for all symbols");
+      await seed();
+    }
+
     console.timeEnd("seed data");
     console.log("Data seeded successfully.");
   });
@@ -89,16 +102,30 @@ program
   .command("find-setups")
   .description("Find setups for all symbols")
   .option("-c, --code <code>", "Process a specific symbol code")
-  .option("-l, --limit <number>", "Limit the number of symbols to process", parseInt)
+  .option(
+    "-l, --limit <number>",
+    "Limit the number of symbols to process",
+    parseInt
+  )
+  .option(
+    "-m, --max-setups <number>",
+    "Maximum number of setups to find per symbol",
+    parseInt
+  )
   .action(async (options) => {
     console.log("Finding setups...");
     console.time("find setups");
-    
+
+    const maxSetups = options.maxSetups || 0;
+    if (maxSetups > 0) {
+      console.log(`Limiting to ${maxSetups} setups per symbol`);
+    }
+
     if (options.code) {
       // Process a single code
       console.log(`Processing setup for ${options.code}...`);
       try {
-        findSetups(options.code);
+        findSetups(options.code, maxSetups);
       } catch (e) {
         console.error(`Error processing ${options.code}:`, e);
       }
@@ -106,27 +133,33 @@ program
       // Process all codes or a limited number
       const allCodes = getAllSymbolCodes();
       const codes = options.limit ? allCodes.slice(0, options.limit) : allCodes;
-      
+
       console.log(`Found ${codes.length} symbols to process`);
-      
+
       // Create a progress bar
       const bar = multibar.create(codes.length, 0, { task: "Finding setups" });
-      
+
+      let totalSetups = 0;
+
       for (let i = 0; i < codes.length; i++) {
         const code = codes[i];
         try {
-          findSetups(code);
-          bar.update(i + 1, { task: `Processed ${code}` });
+          const setupsFound = findSetups(code, maxSetups);
+          totalSetups += setupsFound;
+          bar.update(i + 1, {
+            task: `Processed ${code} (${setupsFound} setups)`,
+          });
         } catch (e) {
           console.error(`Error processing ${code}:`, e);
         }
         // wait 100ms between each code
         await new Promise((resolve) => setTimeout(resolve, 100));
       }
-      
+
       bar.stop();
+      console.log(`Total setups found: ${totalSetups}`);
     }
-    
+
     console.timeEnd("find setups");
     console.log("Setups finding completed.");
   });
@@ -158,11 +191,23 @@ program
 // Run all command
 program
   .command("run-all")
-  .description("Run the entire process (reset DB, create tables, seed data, find setups, etc.)")
-  .action(async () => {
+  .description(
+    "Run the entire process (reset DB, create tables, seed data, find setups, etc.)"
+  )
+  .option(
+    "-m, --max-setups <number>",
+    "Maximum number of setups to find per symbol",
+    parseInt
+  )
+  .option("-c, --code <code>", "Process a specific symbol code")
+  .action(async (options) => {
+    const maxSetups = options.maxSetups || 0;
+    if (maxSetups > 0) {
+      console.log(`Limiting to ${maxSetups} setups per symbol`);
+    }
     // Reset database
     const dbPath = process.env.DB_PATH || "./data.sqlite";
-    
+
     if (fs.existsSync(dbPath)) {
       console.log(`Removing existing database file: ${dbPath}`);
       fs.unlinkSync(dbPath);
@@ -172,7 +217,7 @@ program
     // Check for and remove any SQLite journal files
     const dbDir = path.dirname(dbPath);
     const dbName = path.basename(dbPath);
-    
+
     const shmPath = path.join(dbDir, `${dbName}-shm`);
     if (fs.existsSync(shmPath)) {
       fs.unlinkSync(shmPath);
@@ -192,32 +237,52 @@ program
     // Seed data
     console.log("Seeding data...");
     console.time("seed data");
-    await seed();
+
+    if (options.code) {
+      console.log(`Seeding data for specific symbol: ${options.code}`);
+      await seed(options.code);
+    } else {
+      console.log("Seeding data for all symbols");
+      await seed();
+    }
+
     console.timeEnd("seed data");
 
     // Find setups
     console.log("Finding setups...");
     console.time("find setups");
-    
-    const codes = getAllSymbolCodes();
-    console.log(`Found ${codes.length} symbols to process`);
-    
+
+    let codes: string[];
+    if (options.code) {
+      codes = [options.code];
+      console.log(`Finding setups for specific symbol: ${options.code}`);
+    } else {
+      codes = getAllSymbolCodes();
+      console.log(`Found ${codes.length} symbols to process`);
+    }
+
     // Create a progress bar
     const bar = multibar.create(codes.length, 0, { task: "Finding setups" });
-    
+
+    let totalSetups = 0;
+
     for (let i = 0; i < codes.length; i++) {
       const code = codes[i];
       try {
-        findSetups(code);
-        bar.update(i + 1, { task: `Processed ${code}` });
+        const setupsFound = findSetups(code, maxSetups);
+        totalSetups += setupsFound;
+        bar.update(i + 1, {
+          task: `Processed ${code} (${setupsFound} setups)`,
+        });
       } catch (e) {
         console.error(`Error processing ${code}:`, e);
       }
       // wait 100ms between each code
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
-    
+
     bar.stop();
+    console.log(`Total setups found: ${totalSetups}`);
     console.timeEnd("find setups");
 
     // Create aggregate historical prices

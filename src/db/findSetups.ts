@@ -14,13 +14,15 @@ import {
   calculateADR,
   calculateDollarVolume,
 } from "../util/calc";
+import { calculateVolatilityContraction } from "../util/volatility";
+import { calculateConsolidationBounds } from "../util/outliers";
 import cliProgress from "cli-progress";
 
 const priorMoveMaxDays = 50;
 const priorMoveMinPercentage = 0.3;
-const trendlineMaxSlope = 0.1;
-const trendlineMinDays = 10;
-const trendlineMaxDays = 40;
+const consolidationMinDays = 10;
+const consolidationMaxDays = 40;
+const minVolatilityContraction = 0.3; // 30% reduction in volatility
 
 const findPriorMove = (
   data: NonNullableDailyPricesObject[],
@@ -76,31 +78,83 @@ const findPriorMove = (
   }
 };
 
-const findTrendlineWithBreakoutIndex = (
+/**
+ * Find a consolidation range with volatility contraction and breakout
+ * @param data Price data
+ * @param priorMoveHighIndex Index of the high point of the prior move
+ * @returns Consolidation range information if found
+ */
+const findConsolidationRange = (
   data: NonNullableDailyPricesObject[],
   priorMoveHighIndex: number
 ):
-  | { trendline: Trendline; index: number; trendlineBreakPrice: number }
+  | {
+      upperBound: number;
+      lowerBound: number;
+      startIndex: number;
+      endIndex: number;
+      volatilityContraction: number;
+      rangeQuality: number;
+      densityScore: number;
+      qualityScore: number;
+      breakoutPrice: number;
+    }
   | undefined => {
-  let trendline: Trendline | undefined;
-
-  for (let offset = trendlineMinDays; offset <= trendlineMaxDays; offset++) {
-    const endIndex = priorMoveHighIndex + offset - 1;
+  for (
+    let period = consolidationMinDays;
+    period <= consolidationMaxDays;
+    period++
+  ) {
+    const endIndex = priorMoveHighIndex + period;
     if (endIndex >= data.length) break;
 
-    const trendlineData = data.slice(priorMoveHighIndex, endIndex);
-    const trendlineFit = fitLine(trendlineData, (d) => d.high);
-    if (!trendlineFit) continue;
-    const { slope, intercept } = trendlineFit;
+    const consolidationData = data.slice(priorMoveHighIndex, endIndex);
 
-    const breakoutPrice = slope * (endIndex - priorMoveHighIndex) + intercept;
-    const isBreakout = data[endIndex]?.close > breakoutPrice;
+    // Calculate range bounds with outlier filtering to "capture the meat of the move"
+    const {
+      upperBound,
+      lowerBound,
+      rangeQuality,
+      densityScore,
+      isValidConsolidation,
+    } = calculateConsolidationBounds(
+      consolidationData,
+      0.1, // Lower percentile
+      0.9, // Upper percentile
+      1.0 // More aggressive outlier filtering
+    );
 
-    const withinMaxSlope = Math.abs(slope) <= trendlineMaxSlope;
+    // Skip this period if it's not a valid consolidation
+    if (!isValidConsolidation) continue;
 
-    if (withinMaxSlope && isBreakout) {
-      trendline = { slope, intercept };
-      return { trendline, index: endIndex, trendlineBreakPrice: breakoutPrice };
+    // Calculate volatility contraction
+    const volatilityContraction = calculateVolatilityContraction(
+      data,
+      priorMoveHighIndex,
+      endIndex - 1
+    );
+
+    // Calculate a combined quality score (0-100)
+    const qualityScore = Math.round(
+      (rangeQuality * 0.6 + volatilityContraction * 0.4) * 100
+    );
+
+    // Check if we have sufficient volatility contraction
+    if (volatilityContraction >= minVolatilityContraction) {
+      // Check for breakout
+      if (data[endIndex]?.close > upperBound) {
+        return {
+          upperBound,
+          lowerBound,
+          startIndex: priorMoveHighIndex,
+          endIndex,
+          volatilityContraction,
+          rangeQuality,
+          densityScore,
+          qualityScore,
+          breakoutPrice: upperBound,
+        };
+      }
     }
   }
 
@@ -170,154 +224,187 @@ const findHighestPriceAndExit = (
   return { exit, highestPrice };
 };
 
-const findSetups = (_code: string) => {
-  const { code, daily } = getHistoricalPrices(_code);
+const findSetups = (_code: string, maxSetups: number = 0) => {
+  const result = getHistoricalPrices(_code);
+  if (!result) return 0;
+
+  const { code, daily } = result;
+
   const decoder = new TextDecoder();
   const jsonString = decoder.decode(daily);
-  const historicalPrices: HistoricalPrices = JSON.parse(jsonString);
+  const historicalPrices = JSON.parse(jsonString);
   const processedData: NonNullableDailyPricesObject[] =
     processData(historicalPrices);
 
   const setups: Setup[] = [];
 
   for (let i = 0; i < processedData.length; i++) {
+    // If we've reached the maximum number of setups, stop processing
+    if (maxSetups > 0 && setups.length >= maxSetups) break;
+
     const priorMove = findPriorMove(processedData, i);
 
     if (priorMove) {
-      const res = findTrendlineWithBreakoutIndex(
+      const consolidationRange = findConsolidationRange(
         processedData,
         priorMove.highIndex
       );
-      if (res) {
-        const { trendline, index, trendlineBreakPrice } = res;
 
-        const adr = calculateADR(processedData, index);
+      if (consolidationRange) {
+        const {
+          upperBound,
+          lowerBound,
+          startIndex,
+          endIndex,
+          volatilityContraction,
+          qualityScore,
+          breakoutPrice,
+        } = consolidationRange;
+
+        const adr = calculateADR(processedData, endIndex);
 
         // Skip trades that are too extended
         if (
-          processedData[index].close >
+          processedData[endIndex].close >
           processedData[priorMove.highIndex].high * (1 + adr)
         ) {
           continue;
         }
 
+        // Create a trendline for chart visualization purposes
+        const consolidationData = processedData.slice(startIndex, endIndex);
+        const trendline = fitLine(consolidationData, (d) => d.high);
+
+        if (!trendline) continue;
+
         const consolidation = {
           slope: trendline.slope,
-          days: index - priorMove.highIndex,
-          startIndex: priorMove.highIndex,
-          endIndex: index,
+          days: endIndex - startIndex,
+          startIndex: startIndex,
+          endIndex: endIndex,
           startDate: DateTime.fromJSDate(
-            processedData[priorMove.highIndex].date
+            processedData[startIndex].date
           ).toFormat("yyyy-MM-dd"),
-          endDate: DateTime.fromJSDate(processedData[index].date).toFormat(
+          endDate: DateTime.fromJSDate(processedData[endIndex].date).toFormat(
             "yyyy-MM-dd"
           ),
         };
 
-        if (consolidation) {
-          const price = processedData[index].close;
-          if (price <= trendlineBreakPrice) {
-            continue;
-          }
+        const price = processedData[endIndex].close;
+        const dollarVolume = calculateDollarVolume(processedData, endIndex);
 
-          const dollarVolume = calculateDollarVolume(processedData, index);
+        // Skip trades with low dollar volume
+        if (dollarVolume < 1000000) {
+          continue;
+        }
 
-          // Skip trades with low dollar volume
-          if (dollarVolume < 1000000) {
-            continue;
-          }
+        const trade = {
+          entry: {
+            price,
+            index: endIndex,
+            trendlineBreakPrice: breakoutPrice,
+            adr,
+            dollarVolume,
+            date: DateTime.fromJSDate(processedData[endIndex].date).toFormat(
+              "yyyy-MM-dd"
+            ),
+          },
+        };
 
-          const trade = {
-            entry: {
-              price,
-              index,
-              trendlineBreakPrice,
-              adr,
-              dollarVolume,
-              date: DateTime.fromJSDate(processedData[index].date).toFormat(
-                "yyyy-MM-dd"
-              ),
-            },
+        // look for a setup with overlapping trading dates
+        const existingSetup = setups.find((setup) => {
+          return (
+            setup.priorMove.lowIndex <= priorMove.lowIndex &&
+            setup.priorMove.highIndex >= priorMove.highIndex &&
+            setup.consolidation?.startIndex <= consolidation.startIndex &&
+            setup.consolidation?.endIndex >= consolidation.endIndex
+          );
+        });
+
+        if (trade && !existingSetup) {
+          const exitResult = findHighestPriceAndExit(
+            processedData,
+            trade as Setup["trade"],
+            endIndex
+          );
+
+          if (!exitResult) continue;
+
+          const { exit, highestPrice } = exitResult;
+
+          // Add exit and highestPrice to trade object
+          const completeTrade = {
+            ...trade,
+            exit,
+            highestPrice,
           };
 
-          // look for a setup with overlapping trading dates
-          const existingSetup = setups.find((setup) => {
-            return (
-              setup.priorMove.lowIndex <= priorMove.lowIndex &&
-              setup.priorMove.highIndex >= priorMove.highIndex &&
-              setup.consolidation?.startIndex <= consolidation.startIndex &&
-              setup.consolidation?.endIndex >= consolidation.endIndex
-            );
-          });
+          const setup: Setup = {
+            code,
+            priorMove,
+            consolidation,
+            trade: completeTrade,
+          };
+          setups.push(setup);
 
-          if (trade && !existingSetup) {
-            trade.entry.trendlineBreakPrice = trendlineBreakPrice;
+          let chartStartIndex = setup.priorMove.lowIndex - 20;
+          if (chartStartIndex < 0) {
+            chartStartIndex = 0;
+          }
+          let chartEndIndex = setup.trade.exit?.index + 20;
+          if (chartEndIndex >= processedData.length) {
+            chartEndIndex = processedData.length - 1;
+          }
+          let priorMoveStartIndex = setup.priorMove.lowIndex - chartStartIndex;
+          if (priorMoveStartIndex < 0) {
+            priorMoveStartIndex = 0;
+          }
+          const priorMoveEndIndex = setup.priorMove.highIndex - chartStartIndex;
+          const consolidationStartIndex =
+            setup.consolidation.startIndex - chartStartIndex;
+          const consolidationEndIndex =
+            setup.consolidation.endIndex - chartStartIndex;
+          const entryIndex = setup.trade.entry.index - chartStartIndex;
+          let exitIndex = setup.trade.exit?.index - chartStartIndex;
 
-            const { exit, highestPrice } = findHighestPriceAndExit(
-              processedData,
-              trade,
-              index
-            );
+          if (!exitIndex) {
+            exitIndex = chartEndIndex - chartStartIndex;
+          }
 
-            trade.exit = exit;
-            trade.highestPrice = highestPrice;
+          // Create a consolidation range object for the chart
+          const consolidationRangeForChart = {
+            upperBound,
+            lowerBound,
+            volatilityContraction,
+            qualityScore,
+          };
 
-            const setup: Setup = {
-              code,
-              priorMove,
-              consolidation,
-              trade,
-            };
-            setups.push(setup);
+          // Generate chart with consolidation range visualization
+          const chart = generateChart(
+            processedData.slice(chartStartIndex, chartEndIndex),
+            priorMoveStartIndex,
+            priorMoveEndIndex,
+            consolidationStartIndex,
+            consolidationEndIndex,
+            entryIndex,
+            exitIndex,
+            trendline,
+            consolidationRangeForChart
+          );
 
-            let chartStartIndex = setup.priorMove.lowIndex - 20;
-            if (chartStartIndex < 0) {
-              chartStartIndex = 0;
-            }
-            let chartEndIndex = setup.trade.exit?.index + 20;
-            if (chartEndIndex >= processedData.length) {
-              chartEndIndex = processedData.length - 1;
-            }
-            let priorMoveStartIndex =
-              setup.priorMove.lowIndex - chartStartIndex;
-            if (priorMoveStartIndex < 0) {
-              priorMoveStartIndex = 0;
-            }
-            const priorMoveEndIndex =
-              setup.priorMove.highIndex - chartStartIndex;
-            const consolidationStartIndex =
-              setup.consolidation.startIndex - chartStartIndex;
-            const consolidationEndIndex =
-              setup.consolidation.endIndex - chartStartIndex;
-            const entryIndex = setup.trade.entry.index - chartStartIndex;
-            let exitIndex = setup.trade.exit?.index - chartStartIndex;
-
-            if (!exitIndex) {
-              exitIndex = chartEndIndex - chartStartIndex;
-            }
-
-            const chart = generateChart(
-              processedData.slice(chartStartIndex, chartEndIndex),
-              priorMoveStartIndex,
-              priorMoveEndIndex,
-              consolidationStartIndex,
-              consolidationEndIndex,
-              entryIndex,
-              exitIndex,
-              trendline
-            );
-            if (chart) {
-              const chartBuffer = Buffer.from(chart);
-              const filename = `${code}-${setup.trade.entry.date}-${setup.trade.exit.date}.png`;
-              sharp(chartBuffer).png().toFile(`./charts/${filename}`);
-            }
+          if (chart) {
+            const chartBuffer = Buffer.from(chart);
+            const filename = `${code}-${setup.trade.entry.date}-${setup.trade.exit.date}.png`;
+            sharp(chartBuffer).png().toFile(`./charts/${filename}`);
           }
         }
       }
     }
   }
+
   addTrades(setups);
   console.log(`${code}: ${setups.length}`);
+  return setups.length;
 };
 
-export { findSetups, calculateADR };
+export { findSetups, calculateADR, findPriorMove, findConsolidationRange };
