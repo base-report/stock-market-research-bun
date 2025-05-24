@@ -19,6 +19,8 @@ const SetupSchema = z.object({
     endDate: z.string(),
     volatilityContraction: z.number().optional(),
     qualityScore: z.number().optional(),
+    rangeQuality: z.number().optional(),
+    densityScore: z.number().optional(),
   }),
   trade: z.object({
     entry: z.object({

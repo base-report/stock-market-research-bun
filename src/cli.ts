@@ -7,12 +7,13 @@ import { getAllSymbolCodes } from "./db/symbol";
 import { findSetups } from "./db/findSetups";
 import { createAggregateHistoricalPrices } from "./db/historicalPrices";
 import { calculateAllPerformanceTechnicals } from "./db/performanceTechnicals";
-import { updateTradeMetrics } from "./db/updateTradeMetrics";
+
 import { populateBprPercentiles } from "./db/bprPercentiles";
 import { syncToPostgres } from "./db/syncToPostgres";
 import fs from "fs";
 import path from "path";
 import { Database } from "bun:sqlite";
+import { sql } from "bun";
 
 // Create a new progress bar instance
 const multibar = new cliProgress.MultiBar(
@@ -22,7 +23,7 @@ const multibar = new cliProgress.MultiBar(
     format:
       " {bar} | {task} | {percentage}% | {value}/{total} | ETA: {eta_formatted}",
   },
-  cliProgress.Presets.shades_classic,
+  cliProgress.Presets.shades_classic
 );
 
 // Create a program instance
@@ -109,12 +110,12 @@ program
   .option(
     "-l, --limit <number>",
     "Limit the number of symbols to process",
-    parseInt,
+    parseInt
   )
   .option(
     "-m, --max-setups <number>",
     "Maximum number of setups to find per symbol",
-    parseInt,
+    parseInt
   )
   .option("--no-charts", "Skip chart generation for faster processing")
   .action(async (options) => {
@@ -202,27 +203,13 @@ program
     console.log("Performance technicals calculated successfully.");
   });
 
-// Update trade metrics command
-program
-  .command("update-trade-metrics")
-  .description(
-    "Update volatility contraction and consolidation quality metrics for trades that don't have them populated",
-  )
-  .action(() => {
-    console.log("Updating trade metrics...");
-    console.time("update trade metrics");
-    const updatedCount = updateTradeMetrics();
-    console.timeEnd("update trade metrics");
-    console.log(`Updated ${updatedCount} trades with metrics successfully.`);
-  });
-
 // Populate BPR percentiles command
 program
   .command("populate-bpr-percentiles")
   .description("Calculate and populate BPR percentiles table")
   .option(
     "-d, --date <date>",
-    "Specific date to calculate percentiles for (format: YYYY-MM-DD)",
+    "Specific date to calculate percentiles for (format: YYYY-MM-DD)"
   )
   .action((options) => {
     console.log("Populating BPR percentiles...");
@@ -254,6 +241,44 @@ program
     console.log(`  Stock Info: ${results.stockInfo}`);
     console.log(`  Trades: ${results.trades}`);
     console.log(`  Total: ${results.total}`);
+  });
+
+// Clean up command - delete charts and clear PostgreSQL trades table
+program
+  .command("cleanup")
+  .description(
+    "Delete all chart files and clear PostgreSQL trades table (leaves SQLite data intact)"
+  )
+  .action(async () => {
+    console.log("Starting cleanup...");
+
+    // Delete all chart files
+    console.log("Deleting chart files...");
+    const chartsDir = "./charts";
+    let deletedCount = 0;
+
+    if (fs.existsSync(chartsDir)) {
+      const files = fs.readdirSync(chartsDir);
+      for (const file of files) {
+        if (file.endsWith(".png")) {
+          fs.unlinkSync(path.join(chartsDir, file));
+          deletedCount++;
+        }
+      }
+    }
+
+    console.log(`Deleted ${deletedCount} chart files.`);
+
+    // Clear the PostgreSQL trades table
+    console.log("Clearing PostgreSQL trades table...");
+    try {
+      await sql`DELETE FROM trades`.simple();
+      console.log("PostgreSQL trades table cleared successfully.");
+    } catch (error) {
+      console.error("Error clearing PostgreSQL trades table:", error);
+    }
+
+    console.log("Cleanup completed successfully.");
   });
 
 // Reset charts and trades command
@@ -302,12 +327,12 @@ program
 program
   .command("run-all")
   .description(
-    "Run the entire process (reset DB, create tables, seed data, find setups, etc.)",
+    "Run the entire process (reset DB, create tables, seed data, find setups, etc.)"
   )
   .option(
     "-m, --max-setups <number>",
     "Maximum number of setups to find per symbol",
-    parseInt,
+    parseInt
   )
   .option("-c, --code <code>", "Process a specific symbol code")
   .option("--no-charts", "Skip chart generation for faster processing")
@@ -423,13 +448,6 @@ program
     calculateAllPerformanceTechnicals();
     console.timeEnd("calculate all performance technicals");
 
-    // Update trade metrics
-    console.log("Updating trade metrics...");
-    console.time("update trade metrics");
-    const updatedCount = updateTradeMetrics();
-    console.timeEnd("update trade metrics");
-    console.log(`Updated ${updatedCount} trades with metrics successfully.`);
-
     // Populate BPR percentiles
     console.log("Populating BPR percentiles...");
     console.time("populate bpr percentiles");
@@ -444,7 +462,7 @@ program
       const syncResults = await syncToPostgres();
       console.timeEnd("sync to postgres");
       console.log(
-        `Synced ${syncResults.total} records to PostgreSQL successfully.`,
+        `Synced ${syncResults.total} records to PostgreSQL successfully.`
       );
     } else {
       console.log("Skipping PostgreSQL sync (POSTGRES_URL not set)");

@@ -1,5 +1,3 @@
-import type { HistoricalPrices } from "../schemas/HistoricalPrices";
-import type { Trendline } from "../schemas/Trendline";
 import type { NonNullableDailyPricesObject } from "../schemas/HistoricalPrices";
 import type { Setup } from "../schemas/Setup";
 
@@ -17,7 +15,6 @@ import {
 import { calculateVolatilityContraction } from "../util/volatility";
 import { calculateConsolidationBounds } from "../util/outliers";
 import { getCache } from "../util/cache";
-import cliProgress from "cli-progress";
 
 const priorMoveMaxDays = 50;
 const priorMoveMinPercentage = 0.3; // Original value
@@ -468,6 +465,8 @@ const findSetups = (
           ),
           volatilityContraction: volatilityContraction,
           qualityScore: qualityScore,
+          rangeQuality: consolidationRange.rangeQuality,
+          densityScore: consolidationRange.densityScore,
         };
 
         const price = processedData[endIndex].close;
