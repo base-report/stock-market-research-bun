@@ -15,7 +15,11 @@ The primary goal is to develop more effective exit strategies based on empirical
 
 ### Setup Identification
 
-We identify potential breakout setups using the following precise criteria:
+We use two different algorithms to identify potential breakout setups, each with its own approach and criteria:
+
+#### Algorithm 1: Original Trendline Breakout Method (findSetups.ts)
+
+This method identifies potential breakout setups using the following precise criteria:
 
 1. **Prior Move Detection**: We look for stocks that have made a significant upward move (at least 30% or more) from a recent low to a high point.
 
@@ -29,6 +33,44 @@ We identify potential breakout setups using the following precise criteria:
 3. **Breakout Point**: We identify the point where the price breaks above the upper bound of the consolidation range, signaling a potential continuation of the prior uptrend.
 
 4. **Entry Criteria**: We ensure the breakout is valid by checking that the breakout day's close exceeds the upper bound or the high exceeds it by at least 1%
+
+#### Algorithm 2: Momentum Breakout Method (findSetupsByAuggie.ts)
+
+This alternative approach focuses on identifying high-quality momentum breakout setups using volatility-adjusted criteria and strict consolidation quality filters:
+
+1. **Prior Move Detection**:
+
+   - Searches for explosive upward moves within a concentrated timeframe
+   - Requires moves to be at least 5x the stock's Average Daily Range (ADR) to ensure significance relative to the stock's normal volatility
+   - Looks back up to 60 days to find qualifying moves, prioritizing the strongest move found
+
+2. **Base Building Analysis**:
+
+   - Identifies consolidation periods between 5-20 trading days following the prior move
+   - Limits retracement to maximum 50% of the prior move's range to maintain momentum characteristics
+   - Applies strict sideways movement validation using multiple quality metrics:
+     - **Net Movement Filter**: Rejects consolidations with more than 3% net directional movement from start to end
+     - **Trend Consistency**: Ensures the first and second halves of the consolidation don't show excessive trending (max 3% difference)
+     - **Flatness Score**: Requires minimum 87% flatness score based on price consistency around the average
+
+3. **Breakout Validation**:
+
+   - Requires breakout strength of at least 0.5x ADR (volatility-adjusted minimum move)
+   - Validates that price breaks above the consolidation's upper bound
+   - Limits extension to maximum 3.0x ADR above resistance to avoid late entries while allowing for stronger momentum moves
+   - No volume requirements - focuses purely on price action and momentum
+
+4. **Quality Filters**:
+   - Minimum $10M daily dollar volume for liquidity
+   - Maximum 30% ADR to avoid overly erratic stocks
+   - No minimum price filter due to split-adjusted historical data
+
+**Key Advantages of This Method**:
+
+- **Volatility-Adjusted**: All criteria scale with each stock's normal volatility patterns
+- **Quality-Focused**: Strict consolidation filters ensure true sideways movement rather than trending patterns
+- **Momentum-Preserved**: Base building requirements maintain the explosive character of the prior move
+- **Concentrated Power**: Emphasis on moves that happen within shorter timeframes for maximum impact
 
 ### Performance Tracking
 

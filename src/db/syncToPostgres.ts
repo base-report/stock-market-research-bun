@@ -18,12 +18,14 @@ const syncToPostgres = async () => {
   const symbolsCount = await syncSymbols();
   const stockInfoCount = await syncStockInfo();
   const tradesCount = await syncTrades();
+  const improvedTradesCount = await syncImprovedTrades();
 
   const results = {
     symbols: symbolsCount,
     stockInfo: stockInfoCount,
     trades: tradesCount,
-    total: symbolsCount + stockInfoCount + tradesCount,
+    improvedTrades: improvedTradesCount,
+    total: symbolsCount + stockInfoCount + tradesCount + improvedTradesCount,
   };
 
   console.log("Sync completed successfully!");
@@ -40,6 +42,7 @@ const dropPostgresTables = async () => {
 
   try {
     // Drop tables in reverse order of dependencies
+    await sql`DROP TABLE IF EXISTS improved_trades CASCADE`.simple();
     await sql`DROP TABLE IF EXISTS trades CASCADE`.simple();
     await sql`DROP TABLE IF EXISTS stock_info CASCADE`.simple();
     await sql`DROP TABLE IF EXISTS symbols CASCADE`.simple();
@@ -114,6 +117,38 @@ const createPostgresTables = async () => {
       exit_days INTEGER,
       volatility_contraction REAL,
       consolidation_quality REAL,
+      gain_pct REAL GENERATED ALWAYS AS ((exit_price - entry_price) / NULLIF(entry_price, 0) * 100) STORED,
+      max_possible_gain_pct REAL GENERATED ALWAYS AS ((highest_price - entry_price) / NULLIF(entry_price, 0) * 100) STORED,
+      unrealized_gain_pct_from_exit REAL GENERATED ALWAYS AS ((highest_price - exit_price) / NULLIF(exit_price, 0) * 100) STORED
+    );
+  `.simple();
+
+  // Create improved_trades table
+  await sql`
+    CREATE TABLE IF NOT EXISTS improved_trades (
+      id SERIAL PRIMARY KEY,
+      code TEXT,
+      prior_move_low_date TEXT,
+      prior_move_high_date TEXT,
+      prior_move_pct REAL,
+      consolidation_slope REAL,
+      consolidation_days INTEGER,
+      consolidation_start_date TEXT,
+      consolidation_end_date TEXT,
+      consolidation_flatness REAL,
+      retracement REAL,
+      entry_price REAL,
+      entry_date TEXT,
+      entry_trendline_break_price REAL,
+      entry_adr_pct REAL,
+      entry_dollar_volume REAL,
+      highest_price_date TEXT,
+      highest_price REAL,
+      highest_price_days INTEGER,
+      exit_price REAL,
+      exit_date TEXT,
+      exit_reason TEXT,
+      exit_days INTEGER,
       gain_pct REAL GENERATED ALWAYS AS ((exit_price - entry_price) / NULLIF(entry_price, 0) * 100) STORED,
       max_possible_gain_pct REAL GENERATED ALWAYS AS ((highest_price - entry_price) / NULLIF(entry_price, 0) * 100) STORED,
       unrealized_gain_pct_from_exit REAL GENERATED ALWAYS AS ((highest_price - exit_price) / NULLIF(exit_price, 0) * 100) STORED
@@ -276,6 +311,84 @@ const syncTrades = async () => {
   }
 
   console.log(`Synced ${count} trades to PostgreSQL`);
+  return count;
+};
+
+/**
+ * Sync improved_trades table from SQLite to PostgreSQL
+ * @returns Number of records synced
+ */
+const syncImprovedTrades = async () => {
+  console.log("Syncing improved_trades table...");
+
+  // Get all improved_trades from SQLite
+  const tradesQuery = db.query(`
+    SELECT
+      code, prior_move_low_date, prior_move_high_date, prior_move_pct,
+      consolidation_slope, consolidation_days, consolidation_start_date, consolidation_end_date,
+      consolidation_flatness, retracement,
+      entry_price, entry_date, entry_trendline_break_price, entry_adr_pct, entry_dollar_volume,
+      highest_price_date, highest_price, highest_price_days,
+      exit_price, exit_date, exit_reason, exit_days
+    FROM improved_trades
+  `);
+  const tradesRaw = tradesQuery.all() as any[];
+
+  // Filter out trades with zero entry or exit prices to avoid division by zero
+  const trades = tradesRaw.filter(
+    (trade) => trade.entry_price > 0 && trade.exit_price > 0
+  );
+
+  console.log(
+    `Filtered out ${tradesRaw.length - trades.length} improved trades with zero prices`
+  );
+
+  if (trades.length === 0) {
+    console.log("No improved_trades found in SQLite");
+    return 0;
+  }
+
+  console.log(`Found ${trades.length} improved_trades in SQLite`);
+
+  // Clear existing data in PostgreSQL
+  await sql`TRUNCATE TABLE improved_trades CASCADE`.simple();
+
+  // Insert improved_trades into PostgreSQL
+  let count = 0;
+  const batchSize = 1000;
+
+  for (let i = 0; i < trades.length; i += batchSize) {
+    const batch = trades.slice(i, i + batchSize);
+    await sql`INSERT INTO improved_trades ${sql(
+      batch,
+      "code",
+      "prior_move_low_date",
+      "prior_move_high_date",
+      "prior_move_pct",
+      "consolidation_slope",
+      "consolidation_days",
+      "consolidation_start_date",
+      "consolidation_end_date",
+      "consolidation_flatness",
+      "retracement",
+      "entry_price",
+      "entry_date",
+      "entry_trendline_break_price",
+      "entry_adr_pct",
+      "entry_dollar_volume",
+      "highest_price_date",
+      "highest_price",
+      "highest_price_days",
+      "exit_price",
+      "exit_date",
+      "exit_reason",
+      "exit_days"
+    )}`;
+    count += batch.length;
+    console.log(`Inserted ${count}/${trades.length} improved_trades`);
+  }
+
+  console.log(`Synced ${count} improved_trades to PostgreSQL`);
   return count;
 };
 

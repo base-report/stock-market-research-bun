@@ -164,7 +164,10 @@ const plotEntryExit = (
 type ConsolidationRange = {
   upperBound: number;
   lowerBound: number;
-  volatilityContraction: number;
+  volatilityContraction?: number; // For backward compatibility
+  flatness?: number;
+  retracement?: number;
+  priorMovePct?: number;
 };
 
 /**
@@ -322,7 +325,7 @@ const generateChart = (
 
   // If consolidation range is provided, visualize it
   if (consolidationRange) {
-    const { upperBound, lowerBound, volatilityContraction, qualityScore } =
+    const { upperBound, lowerBound, flatness, retracement, priorMovePct } =
       consolidationRange;
 
     // Get the x coordinates for the consolidation range
@@ -361,18 +364,39 @@ const generateChart = (
       .attr("stroke", "rgba(255, 255, 255, 0.9)")
       .attr("stroke-width", 1.5);
 
-    // Add volatility contraction label
-    svg
-      .append("text")
-      .attr("x", startX + (endX - startX) / 2)
-      .attr("y", yScale(upperBound) - 5)
-      .attr("text-anchor", "middle")
-      .attr("fill", "white")
-      .attr("font-size", "10px")
-      .attr("font-family", "sans-serif") // Match axis label font
-      .text(
-        `Vol. Contraction: ${Math.round(volatilityContraction * 100)}%${qualityScore ? ` | Quality: ${qualityScore}` : ""}`
-      );
+    // Add labels for improved trades
+    if (priorMovePct !== undefined) {
+      svg
+        .append("text")
+        .attr("x", startX + 10)
+        .attr("y", yScale(upperBound) - 10)
+        .attr("fill", "white")
+        .attr("font-size", "12px")
+        .attr("font-family", "Arial, sans-serif")
+        .text(`Prior Move: ${(priorMovePct * 100).toFixed(1)}%`);
+    }
+
+    if (flatness !== undefined) {
+      svg
+        .append("text")
+        .attr("x", startX + 10)
+        .attr("y", yScale(upperBound) - 25)
+        .attr("fill", "white")
+        .attr("font-size", "12px")
+        .attr("font-family", "Arial, sans-serif")
+        .text(`Flatness: ${(flatness * 100).toFixed(1)}%`);
+    }
+
+    if (retracement !== undefined) {
+      svg
+        .append("text")
+        .attr("x", startX + 10)
+        .attr("y", yScale(upperBound) - 40)
+        .attr("fill", "white")
+        .attr("font-size", "12px")
+        .attr("font-family", "Arial, sans-serif")
+        .text(`Retracement: ${(retracement * 100).toFixed(1)}%`);
+    }
   }
 
   // Plot entry and exit points

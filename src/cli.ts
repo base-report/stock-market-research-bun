@@ -5,6 +5,8 @@ import { createTables } from "./db/setup";
 import { seed } from "./db/seed";
 import { getAllSymbolCodes } from "./db/symbol";
 import { findSetups } from "./db/findSetups";
+import { findSetupsByTrend } from "./db/findSetupsByTrend";
+import { findSetupsByAuggie } from "./db/findSetupsByAuggie";
 import { createAggregateHistoricalPrices } from "./db/historicalPrices";
 import { calculateAllPerformanceTechnicals } from "./db/performanceTechnicals";
 
@@ -13,7 +15,6 @@ import { syncToPostgres } from "./db/syncToPostgres";
 import fs from "fs";
 import path from "path";
 import { Database } from "bun:sqlite";
-import { sql } from "bun";
 
 // Create a new progress bar instance
 const multibar = new cliProgress.MultiBar(
@@ -34,6 +35,214 @@ program
   .name("stock-market-research")
   .description("CLI for stock market research operations")
   .version("1.0.0");
+
+/**
+ * Process tickers in batches concurrently for improved performance
+ */
+async function processBatchesConcurrently(
+  codes: string[],
+  numBatches: number,
+  maxSetups: number,
+  generateCharts: boolean
+): Promise<number> {
+  // Split codes into batches
+  const batchSize = Math.ceil(codes.length / numBatches);
+  const batches: string[][] = [];
+
+  for (let i = 0; i < codes.length; i += batchSize) {
+    batches.push(codes.slice(i, i + batchSize));
+  }
+
+  console.log(`Split ${codes.length} symbols into ${batches.length} batches`);
+  console.log(`Batch sizes: ${batches.map((b) => b.length).join(", ")}`);
+
+  // Create progress bars for each batch
+  const batchBars = batches.map((batch, index) =>
+    multibar.create(batch.length, 0, { task: `Batch ${index + 1}` })
+  );
+
+  // Process each batch concurrently
+  const batchPromises = batches.map(async (batch, batchIndex) => {
+    let batchSetups = 0;
+    const bar = batchBars[batchIndex];
+
+    for (let i = 0; i < batch.length; i++) {
+      const code = batch[i];
+      try {
+        const setupsFound = findSetups(code, maxSetups, generateCharts);
+        batchSetups += setupsFound;
+        bar.update(i + 1, {
+          task: `Batch ${batchIndex + 1}: ${code} (${setupsFound} setups)`,
+        });
+      } catch (e) {
+        console.error(
+          `Error processing ${code} in batch ${batchIndex + 1}:`,
+          e
+        );
+        bar.update(i + 1, {
+          task: `Batch ${batchIndex + 1}: ${code} (ERROR)`,
+        });
+      }
+
+      // Small delay to prevent overwhelming the system
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+
+    return batchSetups;
+  });
+
+  // Wait for all batches to complete
+  const batchResults = await Promise.all(batchPromises);
+
+  // Stop all progress bars
+  multibar.stop();
+
+  // Calculate total setups
+  const totalSetups = batchResults.reduce((sum, count) => sum + count, 0);
+
+  console.log(`Batch processing completed:`);
+  batchResults.forEach((count, index) => {
+    console.log(`  Batch ${index + 1}: ${count} setups`);
+  });
+
+  return totalSetups;
+}
+
+// Process batches concurrently for trend similarity
+const processBatchesConcurrentlyByTrend = async (
+  codes: string[],
+  numBatches: number,
+  maxSetups: number,
+  generateCharts: boolean
+): Promise<number> => {
+  // Split codes into batches
+  const batchSize = Math.ceil(codes.length / numBatches);
+  const batches: string[][] = [];
+  for (let i = 0; i < codes.length; i += batchSize) {
+    batches.push(codes.slice(i, i + batchSize));
+  }
+
+  console.log(`Split ${codes.length} codes into ${batches.length} batches`);
+
+  // Create progress bars for each batch
+  const batchBars = batches.map((batch, index) =>
+    multibar.create(batch.length, 0, { task: `Batch ${index + 1}` })
+  );
+
+  // Process each batch concurrently
+  const batchPromises = batches.map(async (batch, batchIndex) => {
+    let batchSetups = 0;
+    const bar = batchBars[batchIndex];
+
+    for (let i = 0; i < batch.length; i++) {
+      const code = batch[i];
+      try {
+        const setupsFound = findSetupsByTrend(code, maxSetups, generateCharts);
+        batchSetups += setupsFound;
+        bar.update(i + 1, {
+          task: `Batch ${batchIndex + 1}: ${code} (${setupsFound} setups)`,
+        });
+      } catch (e) {
+        console.error(
+          `Error processing ${code} in batch ${batchIndex + 1}:`,
+          e
+        );
+        bar.update(i + 1, {
+          task: `Batch ${batchIndex + 1}: ${code} (ERROR)`,
+        });
+      }
+
+      // Small delay to prevent overwhelming the system
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+
+    return batchSetups;
+  });
+
+  // Wait for all batches to complete
+  const batchResults = await Promise.all(batchPromises);
+
+  // Stop all progress bars
+  multibar.stop();
+
+  // Calculate total setups
+  const totalSetups = batchResults.reduce((sum, count) => sum + count, 0);
+
+  console.log(`Batch processing completed:`);
+  batchResults.forEach((count, index) => {
+    console.log(`  Batch ${index + 1}: ${count} setups`);
+  });
+
+  return totalSetups;
+};
+
+// Process batches concurrently for Auggie's momentum algorithm
+const processBatchesConcurrentlyByAuggie = async (
+  codes: string[],
+  numBatches: number,
+  maxSetups: number,
+  generateCharts: boolean
+): Promise<number> => {
+  // Split codes into batches
+  const batchSize = Math.ceil(codes.length / numBatches);
+  const batches: string[][] = [];
+  for (let i = 0; i < codes.length; i += batchSize) {
+    batches.push(codes.slice(i, i + batchSize));
+  }
+
+  console.log(`Split ${codes.length} codes into ${batches.length} batches`);
+
+  // Create progress bars for each batch
+  const batchBars = batches.map((batch, index) =>
+    multibar.create(batch.length, 0, { task: `Batch ${index + 1}` })
+  );
+
+  // Process each batch concurrently
+  const batchPromises = batches.map(async (batch, batchIndex) => {
+    let batchSetups = 0;
+    const bar = batchBars[batchIndex];
+
+    for (let i = 0; i < batch.length; i++) {
+      const code = batch[i];
+      try {
+        const setupsFound = findSetupsByAuggie(code, maxSetups, generateCharts);
+        batchSetups += setupsFound;
+        bar.update(i + 1, {
+          task: `Batch ${batchIndex + 1}: ${code} (${setupsFound} setups)`,
+        });
+      } catch (e) {
+        console.error(
+          `Error processing ${code} in batch ${batchIndex + 1}:`,
+          e
+        );
+        bar.update(i + 1, {
+          task: `Batch ${batchIndex + 1}: ${code} (ERROR)`,
+        });
+      }
+
+      // Small delay to prevent overwhelming the system
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+
+    return batchSetups;
+  });
+
+  // Wait for all batches to complete
+  const batchResults = await Promise.all(batchPromises);
+
+  // Stop all progress bars
+  multibar.stop();
+
+  // Calculate total setups
+  const totalSetups = batchResults.reduce((sum, count) => sum + count, 0);
+
+  console.log(`Batch processing completed:`);
+  batchResults.forEach((count, index) => {
+    console.log(`  Batch ${index + 1}: ${count} setups`);
+  });
+
+  return totalSetups;
+};
 
 // Reset database command
 program
@@ -118,11 +327,19 @@ program
     parseInt
   )
   .option("--no-charts", "Skip chart generation for faster processing")
+  .option(
+    "-b, --batches <number>",
+    "Number of batches for concurrent processing (default: 10)",
+    parseInt
+  )
+  .option("--concurrent", "Enable concurrent batch processing")
   .action(async (options) => {
     console.log("Finding setups...");
     console.time("find setups");
 
     const maxSetups = options.maxSetups || 0;
+    const numBatches = options.batches || 10;
+    const useConcurrent = options.concurrent || false;
     let totalSetups = 0;
     let bar: any;
 
@@ -150,33 +367,269 @@ program
 
       console.log(`Found ${codes.length} symbols to process`);
 
-      // Create a progress bar
-      bar = multibar.create(codes.length, 0, { task: "Finding setups" });
+      if (useConcurrent && codes.length > 1) {
+        console.log(`Using concurrent processing with ${numBatches} batches`);
+        totalSetups = await processBatchesConcurrently(
+          codes,
+          numBatches,
+          maxSetups,
+          options.charts !== false
+        );
+      } else {
+        // Sequential processing (original behavior)
+        console.log("Using sequential processing");
 
-      totalSetups = 0;
+        // Create a progress bar
+        bar = multibar.create(codes.length, 0, { task: "Finding setups" });
 
-      for (let i = 0; i < codes.length; i++) {
-        const code = codes[i];
-        const generateCharts = options.charts !== false;
-        try {
-          const setupsFound = findSetups(code, maxSetups, generateCharts);
-          totalSetups += setupsFound;
-          bar.update(i + 1, {
-            task: `Processed ${code} (${setupsFound} setups)`,
-          });
-        } catch (e) {
-          console.error(`Error processing ${code}:`, e);
+        totalSetups = 0;
+
+        for (let i = 0; i < codes.length; i++) {
+          const code = codes[i];
+          const generateCharts = options.charts !== false;
+          try {
+            const setupsFound = findSetups(code, maxSetups, generateCharts);
+            totalSetups += setupsFound;
+            bar.update(i + 1, {
+              task: `Processed ${code} (${setupsFound} setups)`,
+            });
+          } catch (e) {
+            console.error(`Error processing ${code}:`, e);
+          }
+          // wait 100ms between each code
+          await new Promise((resolve) => setTimeout(resolve, 100));
         }
-        // wait 100ms between each code
-        await new Promise((resolve) => setTimeout(resolve, 100));
+
+        bar.stop();
       }
 
-      bar.stop();
       console.log(`Total setups found: ${totalSetups}`);
     }
 
     console.timeEnd("find setups");
     console.log("Setups finding completed.");
+  });
+
+// Find setups by trend similarity command
+program
+  .command("find-setups-by-trend")
+  .description("Find setups using trend similarity to ideal pattern")
+  .option("-c, --code <code>", "Process a specific symbol code")
+  .option(
+    "-l, --limit <number>",
+    "Limit the number of symbols to process",
+    parseInt
+  )
+  .option(
+    "-m, --max-setups <number>",
+    "Maximum number of setups to find per symbol",
+    parseInt
+  )
+  .option("--no-charts", "Skip chart generation for faster processing")
+  .option(
+    "-b, --batches <number>",
+    "Number of batches for concurrent processing (default: 10)",
+    parseInt
+  )
+  .option("--concurrent", "Enable concurrent batch processing")
+  .action(async (options) => {
+    console.log("Finding setups using trend similarity...");
+    console.time("find setups by trend");
+
+    const maxSetups = options.maxSetups || 0;
+    const numBatches = options.batches || 10;
+    const useConcurrent = options.concurrent || false;
+    let totalSetups = 0;
+    let bar: any;
+
+    if (maxSetups > 0) {
+      console.log(`Limiting to ${maxSetups} setups per symbol`);
+    }
+
+    if (options.code) {
+      // Process a single code
+      console.log(`Processing trend similarity setup for ${options.code}...`);
+      const generateCharts = options.charts !== false;
+      if (!generateCharts) {
+        console.log("Chart generation disabled for faster processing");
+      }
+      try {
+        const setupsFound = findSetupsByTrend(
+          options.code,
+          maxSetups,
+          generateCharts
+        );
+        totalSetups = setupsFound;
+      } catch (e) {
+        console.error(`Error processing ${options.code}:`, e);
+      }
+    } else {
+      // Process all codes or a limited number
+      const allCodes = getAllSymbolCodes();
+      const codes = options.limit ? allCodes.slice(0, options.limit) : allCodes;
+
+      console.log(`Found ${codes.length} symbols to process`);
+
+      if (useConcurrent && codes.length > 1) {
+        console.log(`Using concurrent processing with ${numBatches} batches`);
+        totalSetups = await processBatchesConcurrentlyByTrend(
+          codes,
+          numBatches,
+          maxSetups,
+          options.charts !== false
+        );
+      } else {
+        // Sequential processing (original behavior)
+        console.log("Using sequential processing");
+
+        // Create a progress bar
+        bar = multibar.create(codes.length, 0, {
+          task: "Finding setups by trend",
+        });
+
+        totalSetups = 0;
+
+        for (let i = 0; i < codes.length; i++) {
+          const code = codes[i];
+          const generateCharts = options.charts !== false;
+          try {
+            const setupsFound = findSetupsByTrend(
+              code,
+              maxSetups,
+              generateCharts
+            );
+            totalSetups += setupsFound;
+            bar.update(i + 1, {
+              task: `Processed ${code} (${setupsFound} setups)`,
+            });
+          } catch (e) {
+            console.error(`Error processing ${code}:`, e);
+          }
+          // wait 100ms between each code
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+
+        bar.stop();
+      }
+
+      console.log(`Total setups found: ${totalSetups}`);
+    }
+
+    console.timeEnd("find setups by trend");
+    console.log("Trend similarity setups finding completed.");
+  });
+
+// Find setups by Auggie's momentum acceleration algorithm
+program
+  .command("find-setups-by-auggie")
+  .description("Find setups using Auggie's momentum acceleration algorithm")
+  .option("-c, --code <code>", "Process a specific symbol code")
+  .option(
+    "-l, --limit <number>",
+    "Limit the number of symbols to process",
+    parseInt
+  )
+  .option(
+    "-m, --max-setups <number>",
+    "Maximum number of setups to find per symbol",
+    parseInt
+  )
+  .option("--no-charts", "Skip chart generation for faster processing")
+  .option(
+    "-b, --batches <number>",
+    "Number of batches for concurrent processing (default: 10)",
+    parseInt
+  )
+  .option("--concurrent", "Enable concurrent batch processing")
+  .action(async (options) => {
+    console.log(
+      "Finding setups using Auggie's momentum acceleration algorithm..."
+    );
+    console.time("find setups by auggie");
+
+    const maxSetups = options.maxSetups || 0;
+    const numBatches = options.batches || 10;
+    const useConcurrent = options.concurrent || false;
+    let totalSetups = 0;
+    let bar: any;
+
+    if (maxSetups > 0) {
+      console.log(`Limiting to ${maxSetups} setups per symbol`);
+    }
+
+    if (options.code) {
+      // Process a single code
+      console.log(
+        `Processing momentum acceleration setup for ${options.code}...`
+      );
+      const generateCharts = options.charts !== false;
+      if (!generateCharts) {
+        console.log("Chart generation disabled for faster processing");
+      }
+      try {
+        const setupsFound = findSetupsByAuggie(
+          options.code,
+          maxSetups,
+          generateCharts
+        );
+        totalSetups = setupsFound;
+      } catch (e) {
+        console.error(`Error processing ${options.code}:`, e);
+      }
+    } else {
+      // Process all codes or a limited number
+      const allCodes = getAllSymbolCodes();
+      const codes = options.limit ? allCodes.slice(0, options.limit) : allCodes;
+
+      console.log(`Found ${codes.length} symbols to process`);
+
+      if (useConcurrent && codes.length > 1) {
+        console.log(`Using concurrent processing with ${numBatches} batches`);
+        totalSetups = await processBatchesConcurrentlyByAuggie(
+          codes,
+          numBatches,
+          maxSetups,
+          options.charts !== false
+        );
+      } else {
+        // Sequential processing (original behavior)
+        console.log("Using sequential processing");
+
+        // Create a progress bar
+        bar = multibar.create(codes.length, 0, {
+          task: "Finding setups by Auggie",
+        });
+
+        totalSetups = 0;
+
+        for (let i = 0; i < codes.length; i++) {
+          const code = codes[i];
+          const generateCharts = options.charts !== false;
+          try {
+            const setupsFound = findSetupsByAuggie(
+              code,
+              maxSetups,
+              generateCharts
+            );
+            totalSetups += setupsFound;
+            bar.update(i + 1, {
+              task: `Processed ${code} (${setupsFound} setups)`,
+            });
+          } catch (e) {
+            console.error(`Error processing ${code}:`, e);
+          }
+          // wait 100ms between each code
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+
+        bar.stop();
+      }
+
+      console.log(`Total setups found: ${totalSetups}`);
+    }
+
+    console.timeEnd("find setups by auggie");
+    console.log("Auggie's momentum acceleration setups finding completed.");
   });
 
 // Create aggregate historical prices command
@@ -269,14 +722,17 @@ program
 
     console.log(`Deleted ${deletedCount} chart files.`);
 
-    // Clear the PostgreSQL trades table
-    console.log("Clearing PostgreSQL trades table...");
+    // Clear the SQLite trades table
+    console.log("Clearing SQLite trades table...");
     try {
-      await sql`DELETE FROM trades`.simple();
-      console.log("PostgreSQL trades table cleared successfully.");
+      const db = new Database("data.sqlite");
+      db.exec("DELETE FROM trades");
+      console.log("SQLite trades table cleared successfully.");
     } catch (error) {
-      console.error("Error clearing PostgreSQL trades table:", error);
+      console.error("Error clearing SQLite trades table:", error);
     }
+
+    // Note: PostgreSQL cleanup can be done manually or via sync-to-postgres command
 
     console.log("Cleanup completed successfully.");
   });
@@ -336,8 +792,17 @@ program
   )
   .option("-c, --code <code>", "Process a specific symbol code")
   .option("--no-charts", "Skip chart generation for faster processing")
+  .option(
+    "-b, --batches <number>",
+    "Number of batches for concurrent processing (default: 10)",
+    parseInt
+  )
+  .option("--concurrent", "Enable concurrent batch processing")
   .action(async (options) => {
     const maxSetups = options.maxSetups || 0;
+    const numBatches = options.batches || 10;
+    const useConcurrent = options.concurrent || false;
+
     if (maxSetups > 0) {
       console.log(`Limiting to ${maxSetups} setups per symbol`);
     }
@@ -408,29 +873,42 @@ program
       codes = getAllSymbolCodes();
       console.log(`Found ${codes.length} symbols to process`);
 
-      // Create a progress bar
-      bar = multibar.create(codes.length, 0, { task: "Finding setups" });
+      if (useConcurrent && codes.length > 1) {
+        console.log(`Using concurrent processing with ${numBatches} batches`);
+        totalSetups = await processBatchesConcurrently(
+          codes,
+          numBatches,
+          maxSetups,
+          options.charts !== false
+        );
+      } else {
+        // Sequential processing (original behavior)
+        console.log("Using sequential processing");
 
-      totalSetups = 0;
+        // Create a progress bar
+        bar = multibar.create(codes.length, 0, { task: "Finding setups" });
 
-      for (let i = 0; i < codes.length; i++) {
-        const code = codes[i];
-        const generateCharts = options.charts !== false;
-        try {
-          const setupsFound = findSetups(code, maxSetups, generateCharts);
-          totalSetups += setupsFound;
-          bar.update(i + 1, {
-            task: `Processed ${code} (${setupsFound} setups)`,
-          });
-        } catch (e) {
-          console.error(`Error processing ${code}:`, e);
+        totalSetups = 0;
+
+        for (let i = 0; i < codes.length; i++) {
+          const code = codes[i];
+          const generateCharts = options.charts !== false;
+          try {
+            const setupsFound = findSetups(code, maxSetups, generateCharts);
+            totalSetups += setupsFound;
+            bar.update(i + 1, {
+              task: `Processed ${code} (${setupsFound} setups)`,
+            });
+          } catch (e) {
+            console.error(`Error processing ${code}:`, e);
+          }
+          // wait 100ms between each code
+          await new Promise((resolve) => setTimeout(resolve, 100));
         }
-        // wait 100ms between each code
-        await new Promise((resolve) => setTimeout(resolve, 100));
       }
     }
 
-    if (!options.code) {
+    if (!options.code && !useConcurrent && bar) {
       bar.stop();
     }
     console.log(`Total setups found: ${totalSetups}`);

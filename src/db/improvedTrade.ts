@@ -1,27 +1,27 @@
-import type { Setup, DBSetupWrite } from "../schemas/Setup";
+import type { ImprovedSetup, DBImprovedSetupWrite } from "../schemas/ImprovedSetup";
 
 import { db } from "./client";
-import { transformSetupSchema } from "../schemas/Setup";
+import { transformImprovedSetupSchema } from "../schemas/ImprovedSetup";
 
-const addTrades = (setups: Setup[]) => {
+const addImprovedTrades = (setups: ImprovedSetup[]) => {
   if (setups.length === 0) return;
 
-  const trades = setups.map(transformSetupSchema);
+  const trades = setups.map(transformImprovedSetupSchema);
   const insertRow = db.prepare(`
-    INSERT INTO trades (
+    INSERT INTO improved_trades (
       code, prior_move_low_date, prior_move_high_date, prior_move_pct,
       consolidation_slope, consolidation_days, consolidation_start_date, consolidation_end_date,
+      consolidation_flatness, retracement,
       entry_price, entry_date, entry_trendline_break_price, entry_adr_pct, entry_dollar_volume,
       highest_price_date, highest_price, highest_price_days,
-      exit_price, exit_date, exit_reason, exit_days,
-      volatility_contraction, consolidation_quality
+      exit_price, exit_date, exit_reason, exit_days
     ) VALUES (
       $code, $prior_move_low_date, $prior_move_high_date, $prior_move_pct,
       $consolidation_slope, $consolidation_days, $consolidation_start_date, $consolidation_end_date,
+      $consolidation_flatness, $retracement,
       $entry_price, $entry_date, $entry_trendline_break_price, $entry_adr_pct, $entry_dollar_volume,
       $highest_price_date, $highest_price, $highest_price_days,
-      $exit_price, $exit_date, $exit_reason, $exit_days,
-      $volatility_contraction, $consolidation_quality
+      $exit_price, $exit_date, $exit_reason, $exit_days
     ) ON CONFLICT(code, entry_date, exit_date) DO UPDATE SET
       prior_move_low_date=excluded.prior_move_low_date,
       prior_move_high_date=excluded.prior_move_high_date,
@@ -30,6 +30,8 @@ const addTrades = (setups: Setup[]) => {
       consolidation_days=excluded.consolidation_days,
       consolidation_start_date=excluded.consolidation_start_date,
       consolidation_end_date=excluded.consolidation_end_date,
+      consolidation_flatness=excluded.consolidation_flatness,
+      retracement=excluded.retracement,
       entry_price=excluded.entry_price,
       entry_trendline_break_price=excluded.entry_trendline_break_price,
       entry_adr_pct=excluded.entry_adr_pct,
@@ -39,12 +41,10 @@ const addTrades = (setups: Setup[]) => {
       highest_price_days=excluded.highest_price_days,
       exit_price=excluded.exit_price,
       exit_reason=excluded.exit_reason,
-      exit_days=excluded.exit_days,
-      volatility_contraction=excluded.volatility_contraction,
-      consolidation_quality=excluded.consolidation_quality
+      exit_days=excluded.exit_days
   `);
 
-  const insertAll = db.transaction((trades: DBSetupWrite[]) => {
+  const insertAll = db.transaction((trades: DBImprovedSetupWrite[]) => {
     for (const trade of trades) {
       insertRow.run({
         $code: trade.code,
@@ -55,6 +55,8 @@ const addTrades = (setups: Setup[]) => {
         $consolidation_days: trade.consolidation_days,
         $consolidation_start_date: trade.consolidation_start_date,
         $consolidation_end_date: trade.consolidation_end_date,
+        $consolidation_flatness: trade.consolidation_flatness,
+        $retracement: trade.retracement,
         $entry_price: trade.entry_price,
         $entry_date: trade.entry_date,
         $entry_trendline_break_price: trade.entry_trendline_break_price,
@@ -67,8 +69,6 @@ const addTrades = (setups: Setup[]) => {
         $exit_date: trade.exit_date,
         $exit_reason: trade.exit_reason,
         $exit_days: trade.exit_days,
-        $volatility_contraction: trade.volatility_contraction,
-        $consolidation_quality: trade.consolidation_quality,
       });
     }
     return trades.length;
@@ -77,4 +77,4 @@ const addTrades = (setups: Setup[]) => {
   insertAll(trades);
 };
 
-export { addTrades };
+export { addImprovedTrades };
